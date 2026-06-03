@@ -1,12 +1,984 @@
-id:  # Unique workflow identifier (kebab-case)
-requirements: # Package dependencies with channels
+id: dsc_analysis
+requirements:
   - name: ecoscope-workflows-core
-    version: "0.18.0"
+    version: "0.22.17.*"
     channel: https://repo.prefix.dev/ecoscope-workflows/
 
-# List of tasks in execution order
+  - name: ecoscope-workflows-ext-ecoscope
+    version: "0.22.17.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows/
+
+  - name: ecoscope-workflows-ext-custom
+    version: "0.0.50.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+  - name: ecoscope-workflows-ext-ste
+    version: "0.0.18.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+  - name: ecoscope-workflows-ext-big-life
+    version: "0.0.8.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+  - name: ecoscope-workflows-ext-mnc
+    version: "0.0.8.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+  - name: ecoscope-workflows-ext-ate
+    version: "0.0.3.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+  - name: ecoscope-workflows-ext-distance-sample-counts
+    version: "0.0.2.*"
+    channel: https://repo.prefix.dev/ecoscope-workflows-custom/
+
+task-instance-defaults:
+  skipif:
+    conditions:
+      - any_is_empty_df
+      - any_dependency_skipped
+
 workflow:
-  - name:  # Display name used for the configuration form UI
-    description:  # Description used for the configuration form
-    id:  # Unique task identifier (snake_case)
-    task:  # Function name from task library
+  - name: Set Workflow Details
+    id: workflow_details
+    task: set_workflow_details
+
+  - name: Time Range
+    id: time_range
+    task: set_time_range
+
+  - name: Set groupers
+    id: groupers
+    task: set_groupers
+    partial:
+      groupers: []
+
+  - name: Configure Google Earth Engine connection
+    id: gee_client 
+    task: set_gee_connection
+
+  - name: Configure EarthRanger connection
+    id: connection_config
+    task: create_connection_configs
+
+  - name: Split connection configuration
+    id: split_connection_config 
+    task: split_connection_configs
+    partial:
+      connection_configs: ${{ workflow.connection_config.return }}
+
+  # fetch patrol events for each survey connectionconfig
+  - name: Fetch patrol events
+    id: retrieve_patrol_events 
+    task: fetch_patrol_events 
+    mapvalues: 
+      argnames: connection_survey 
+      argvalues: ${{ workflow.split_connection_config.return }}
+  
+  - name: Set patrol dataframe index 
+    id: set_patrol_index
+    task: set_dataframe_index 
+    partial: 
+      column: id 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.retrieve_patrol_events.return }}
+
+  # fetch transects for each survey connection config
+  - name: Fetch patrol transects from individual surveys 
+    id: fetch_patrol_transects 
+    task: fetch_transects 
+    mapvalues: 
+      argnames: connection_survey 
+      argvalues: ${{ workflow.split_connection_config.return }}
+
+  # retrieve earthranger server name 
+  - name: Fetch earthranger server name
+    id: fetch_earthranger_client
+    task: get_server_name
+    mapvalues:
+      argnames: connection_survey
+      argvalues: ${{ workflow.split_connection_config.return }}
+
+  - name: Combine connection survey config with patrol events
+    id: zip_conn_patrol_events
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.split_connection_config.return }}
+        - ${{ workflow.set_patrol_index.return }}
+  
+  # fetch events from patrol event ids for each survey connection config
+  - name: Fetch events from patrol event ids 
+    id: fetch_events_from_ids 
+    task: fetch_events
+    partial: 
+      chunk_size: 50
+    mapvalues: 
+      argnames: 
+        - connection_survey 
+        - patrol_events 
+      argvalues: ${{ workflow.zip_conn_patrol_events.return }}
+
+  # survey event details values
+  - name: Filter out distancecountpatrol_rep events only 
+    id: filter_survey_events
+    task: filter_row_values 
+    partial: 
+      column: event_type
+      values: 
+        - distancecountpatrol_rep
+        - distance_count_patrol_metadata
+    mapvalues:
+      argnames: df 
+      argvalues: ${{ workflow.fetch_events_from_ids.return }}
+
+  - name: Extract latitude and longitude columns from survey events 
+    id: extract_lat_long 
+    task: parse_df_point 
+    mapvalues:
+      argnames: df 
+      argvalues: ${{ workflow.filter_survey_events.return }}
+  
+  - name: Normalize reported_by column
+    id: normalize_reported_by
+    task: normalize_json_column
+    partial:
+      column: reported_by
+      skip_if_not_exists: true
+      sort_columns: true
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.extract_lat_long.return }}
+
+  - name: Fix reported_by column to extract list values
+    id: extract_reported_by 
+    task: join_list_column 
+    partial: 
+      column: "reported_by__name" 
+      separator: ","
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.normalize_reported_by.return }}
+
+  - name: Zip er connection to retained survey values 
+    id: zip_conn_survey_df 
+    task: zip_groupbykey 
+    partial: 
+      sequences:
+        - ${{ workflow.extract_reported_by.return }}
+        - ${{ workflow.fetch_earthranger_client.return }}
+
+  - name: Process survey event details 
+    id: process_survey_event_details 
+    task: process_events_details
+    partial: 
+      map_to_titles: true 
+      ordered: true 
+    mapvalues: 
+      argnames:
+        - df 
+        - client 
+      argvalues: ${{ workflow.zip_conn_survey_df.return }}
+
+  - name: Normalize event_details column
+    id: normalize_survey_df
+    task: normalize_json_column
+    partial:
+      column: event_details
+      skip_if_not_exists: true
+      sort_columns: true
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.process_survey_event_details.return }}
+
+  - name: Map survey event column names
+    id: map_survey_event_columns
+    task: map_columns
+    partial: 
+      raise_if_not_found: false
+      drop_columns:
+        - id 
+      retain_columns:
+        - serial_number
+        - event_type
+        - time 
+        - Latitude
+        - Longitude
+        - "reported_by__name" 
+        - event_details__Transect ID
+        - event_details__Transect_ID
+        - event_details__Team_members
+        - event_details__Team Members
+        - event_details__Number_of_observers
+        - "event_details__Number of Observers"
+
+      rename_columns: {
+        "time":"time",
+        "event_type":"event_type",
+        "title":"title",
+        "geometry":"geometry",
+        "serial_number":"serial_number",
+        "patrol_id":"patrol_id",
+        "patrol_serial_number":"patrol_serial_number",
+        "reported_by__name": "reported_by",
+        "Latitude":"latitude",
+        "Longitude":"longitude",
+        "event_details__Number_of_observers":"Number of Observers",
+        "event_details__Team_members":"Team Members",
+        "event_details__Transect_ID":"Transect ID",
+        "event_details__Number of Observers": "Number of Observers",
+        "event_details__Team Members": "Team Members",
+        "event_details__Transect ID": "Transect ID",
+
+      }
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.normalize_survey_df.return }}
+
+  - name: Parse list column from Team Members column
+    id: parse_team_members
+    task: parse_list_column
+    partial:
+      column: "Team Members"
+    mapvalues:
+      argnames: df 
+      argvalues: ${{ workflow.map_survey_event_columns.return }}
+
+  - name: Extract list values from Team members column
+    id: join_team_members 
+    task: join_list_column 
+    partial: 
+      column: "Team Members"
+      separator: ","
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.parse_team_members.return }}
+
+  - name: Drop columns with all null values 
+    id: drop_null_cols 
+    task: drop_null_columns 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.join_team_members.return }}
+
+  # persist survey event details 
+  - name: Get survey name
+    id: retrieve_survey_name
+    task: get_survey_name
+    mapvalues:
+      argnames: connection_survey
+      argvalues: ${{ workflow.split_connection_config.return }}
+
+  - name: Combine survey name with event details for filename
+    id: combine_survey_event_names 
+    task: combine_names 
+    partial: 
+      b: _analysis_metadata
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Zip filename with survey event details dataframe
+    id: zip_filename_survey_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.combine_survey_event_names.return }}
+        - ${{ workflow.drop_null_cols.return }}
+
+  - name: Persist survey event details dataframe with dynamic filename
+    id: persist_survey_event_metadata
+    task: persist_df_wrapper 
+    partial:
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - csv 
+      filename: null
+      sanitize: false 
+    mapvalues:
+      argnames:
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_survey_df.return }}
+
+  - name: Select event_details column from events and merge with patrols 
+    id: select_event_details
+    task: select_columns
+    partial:
+      columns: ["event_details"]
+      raise_on_missing: false
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.fetch_events_from_ids.return }}
+
+  - name: Zip patrol events and filtered event dataframe 
+    id: zip_patrol_events_df 
+    task: zip_groupbykey
+    partial: 
+      sequences: 
+        - ${{ workflow.set_patrol_index.return }} #left 
+        - ${{ workflow.select_event_details.return }} #right 
+
+  - name: Merge patrols with events event_details column
+    id: merge_patrol_events
+    task: merge_two_dataframes
+    partial:
+      how: left
+      left_on: null
+      right_on: null
+      left_index: true
+      right_index: true
+      fillna_value: null
+      on: null
+    mapvalues:
+      argnames:
+        - left
+        - right
+      argvalues: ${{ workflow.zip_patrol_events_df.return }}
+
+  - name: Convert timezone to UTC 
+    id : convert_tz_utc
+    task: convert_column_timezone
+    partial: 
+      column: time 
+      time_range: ${{ workflow.time_range.return }}
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.merge_patrol_events.return }}
+
+  - name: Normalize patrol event_details column
+    id: normalize_event_details
+    task: normalize_json_column
+    partial:
+      column: event_details
+      skip_if_not_exists: true
+      sort_columns: true
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.convert_tz_utc.return }}
+
+  - name: Map patrol df columns
+    id: map_patrol_df
+    task: map_columns
+    partial:
+      drop_columns: null
+      raise_if_not_found: false
+      retain_columns: null
+      rename_columns: {
+        "event_details__distancecountpatrol_numberofobservers": "num_observers",
+        "event_details__distancecountpatrol_teammembers": "Team Members",
+        "event_details__distancecountpatrol_transectid": "transect_id",
+        "event_details__distancecountwildlife_distancetocentre": "dist_to_centre",
+        "event_details__distancecountwildlife_numberofjuveniles": "num_juveniles",
+        "event_details__distancecountwildlife_radialangle": "radialangle",
+        "event_details__distancecountwildlife_species": "species",
+        "event_details__distancecountwildlife_totalcount": "totalcount",
+        "event_details__Transect_ID": "transect_id",
+        "event_details__Team_members": "Team Members",
+        "event_details__Number_of_observers": "num_observers",
+        "event_details__Number_of_Observers": "num_observers",
+        "event_details__Number of Observers": "num_observers",
+      }
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.normalize_event_details.return }}
+
+  - name: Backward fill patrol event values within patrols 
+    id: bfill_patrol_events 
+    task: bfill_within_patrols 
+    partial:  
+      group_col: patrol_serial_number 
+      columns: ['transect_id', 'num_observers']
+      skip_if_missing: true 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.map_patrol_df.return }}
+
+  - name: Forward fill patrol event values within patrols 
+    id: ffill_patrol_events 
+    task: ffill_within_patrols 
+    partial: 
+      group_col: patrol_serial_number 
+      columns: ['transect_id', 'num_observers']
+      skip_if_missing: true 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.bfill_patrol_events.return }}
+
+  - name: Filter out distancecountwildlife_rep only 
+    id: filter_wildlife_rep 
+    task: filter_row_values 
+    partial:
+      column: event_type 
+      values: 
+        - distancecountwildlife_rep
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.ffill_patrol_events.return }}
+
+  - name: Zip connection survey name with patrol events
+    id: zip_conn_surv_name_df 
+    task: zip_groupbykey 
+    partial:
+      sequences: 
+        - ${{ workflow.filter_wildlife_rep.return }}
+        - ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Add survey_id column to patrol events df
+    id: add_survey_column 
+    task: add_constant_column 
+    partial: 
+      column: "survey_id"
+    mapvalues: 
+      argnames: 
+        - df 
+        - value
+      argvalues: ${{ workflow.zip_conn_surv_name_df.return }}
+
+  # Transects 
+  # Convert transects to utm_crs
+  - name: Convert retrieved transects crs to utm_crs
+    id: convert_transects_utm 
+    task: estimate_utm_crs
+    mapvalues: 
+      argnames: geodataframe 
+      argvalues: ${{ workflow.fetch_patrol_transects.return }}
+
+  - name: Zip transect df and utm crs value 
+    id: zip_transect_df_crs 
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.convert_transects_utm.return }}
+        - ${{ workflow.fetch_patrol_transects.return }}
+
+  - name: Reproject transects to utm crs  
+    id: reproject_transects_utm
+    task: reproject_gdf
+    mapvalues: 
+      argnames: 
+        - target_crs 
+        - gdf 
+      argvalues: ${{ workflow.zip_transect_df_crs.return }}
+
+  - name: Zip patrol df and crs 
+    id: zip_patrol_df_crs 
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.convert_transects_utm.return }}
+        - ${{ workflow.add_survey_column.return }}
+
+  - name: Reproject patrol events to utm crs
+    id: patrol_events_utm 
+    task: reproject_gdf
+    mapvalues: 
+      argnames: 
+        - target_crs 
+        - gdf 
+      argvalues: ${{ workflow.zip_patrol_df_crs.return }}
+    
+  - name: Zip patrol events and transects 
+    id: zip_patrol_transects  
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.patrol_events_utm.return }}
+        - ${{ workflow.reproject_transects_utm.return }}
+
+  - name: Calculate distance from observers position to transect centerline 
+    id: observers_distance 
+    task: add_off_transect_distance
+    partial: 
+      distance_column: off_transect_dist
+      transect_id_column: transect_id 
+      transect_name_column: name
+    mapvalues: 
+      argnames: 
+        - patrol_events 
+        - transects 
+      argvalues: ${{ workflow.zip_patrol_transects.return }}
+
+  - name: Exclude row values where off_transect_dist == -1
+    id: exclude_neg_off_transects
+    task: filter_numeric_df
+    partial:
+      column_name: off_transect_dist
+      value: -1
+      reset_index: true
+      coerce_numeric: true
+      op: "ne"
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.observers_distance.return }}
+
+  - name: Add orig geometry from existing geometry 
+    id: add_orig_geom
+    task: add_orig_geometry
+    mapvalues: 
+      argnames: gdf 
+      argvalues: ${{ workflow.exclude_neg_off_transects.return }}
+
+  - name: Estimate animal position 
+    id: estimate_animal_position 
+    task: estimate_animal_positions
+    partial:  
+      distance_column: dist_to_centre
+      angle_column: radialangle 
+      preserve_original_as: orig_geometry 
+    mapvalues: 
+      argnames: patrol_events 
+      argvalues: ${{ workflow.add_orig_geom.return }}
+
+  - name: Zip estimated patrol events and transects 
+    id: zip_est_patrol_transects  
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.estimate_animal_position.return }}
+        - ${{ workflow.reproject_transects_utm.return }}
+
+  - name: Calculate orthogonal distance
+    id: compute_ortho_dist
+    task: add_off_transect_distance
+    partial: 
+      distance_column: ortho_dist
+      transect_id_column: transect_id 
+      transect_name_column: name
+    mapvalues: 
+      argnames: 
+        - patrol_events 
+        - transects 
+      argvalues: ${{ workflow.zip_est_patrol_transects.return }}
+  
+  - name: Exclude row values where ortho_dist == -1
+    id: exclude_neg_ortho_dist
+    task: filter_numeric_df
+    partial:
+      column_name: ortho_dist
+      value: -1
+      reset_index: true
+      coerce_numeric: true
+      op: "ne"
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.compute_ortho_dist.return }}
+
+  # Transect processing for labeling with imagery
+  - name: Merge transect lines
+    id: merge_transects
+    task: merge_transect_lines
+    mapvalues:
+      argnames: transects
+      argvalues: ${{ workflow.reproject_transects_utm.return }}
+  
+  - name: Simplify transects by a tolerance of 50 meters
+    id: simplify_tolerance 
+    task: simplify_transects 
+    partial: 
+      tolerance: 50
+    mapvalues: 
+      argnames: transects 
+      argvalues: ${{ workflow.merge_transects.return }}
+
+  - name: Buffer transects by 500 meters on each side with flat cap style and 5 meter resolution
+    id: buffer_transect_segments 
+    task: buffer_transects 
+    partial: 
+      cap_style: flat 
+      single_sided: false 
+      resolution: 5
+      distance: 500 
+    mapvalues: 
+      argnames: transects 
+      argvalues: ${{ workflow.simplify_tolerance.return }}
+
+  - name: Zip patrol events with buffered transects
+    id: zip_events_buff_trans
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.exclude_neg_ortho_dist.return }}
+        - ${{ workflow.buffer_transect_segments.return }}
+
+  - name: Filter events that intersect with transects 
+    id: filter_intersecting_events 
+    task: flag_events_intersecting_transect 
+    partial: 
+      intersects_column: "intersects_transect"
+      transect_id_column: "transect_id"
+      transect_name_column: "name"
+      index_column: "id"
+    mapvalues: 
+      argnames: 
+        - patrol_events 
+        - transects 
+      argvalues: ${{ workflow.zip_events_buff_trans.return }}
+
+  - name: Zip filtered events with buffered transects for visited-transect filter
+    id: zip_filtered_events_trans
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.filter_intersecting_events.return }}
+        - ${{ workflow.buffer_transect_segments.return }}
+
+  - name: Keep only transects visited by at least one intersecting event
+    id: visited_transects
+    task: filter_visited_transects
+    partial:
+      intersects_column: "intersects_transect"
+      transect_id_column: "transect_id"
+      transect_name_column: "name"
+    mapvalues:
+      argnames:
+        - patrol_events
+        - transects
+      argvalues: ${{ workflow.zip_filtered_events_trans.return }}
+
+  - name: Convert transects gdf back to epsg:4326 for export and labeling with imagery
+    id: reproject_transects
+    task: reproject_gdf
+    partial:
+      target_crs: "epsg:4326"
+    mapvalues:
+      argnames: gdf
+      argvalues: ${{ workflow.visited_transects.return }}
+
+  - name: Get since filter from survey start date on connection config
+    id: get_since_conf_filter 
+    task: get_since_filter 
+    mapvalues: 
+      argnames: connection_survey 
+      argvalues: ${{ workflow.split_connection_config.return }}
+
+  - name: Zip transects df with since filter 
+    id: zip_df_since 
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.get_since_conf_filter.return }}
+        - ${{ workflow.reproject_transects.return }}
+
+  - name: Add since filter to transect df
+    id: add_since_transects 
+    task: add_constant_column 
+    partial: 
+      column: "survey_date"
+    mapvalues: 
+      argnames: 
+        - value 
+        - df 
+      argvalues: ${{ workflow.zip_df_since.return }}
+
+  - name: Convert transects to feature collection
+    id: convert_trans_ee
+    task: to_ee_feature_collection
+    partial:
+      client: ${{ workflow.gee_client.return }}
+    mapvalues:
+      argnames: gdf
+      argvalues: ${{ workflow.add_since_transects.return }}
+
+  - name: Zip aoi and since filter for imagery retrieval
+    id: zip_aoi_since 
+    task: zip_groupbykey
+    partial: 
+      sequences: 
+        - ${{ workflow.convert_trans_ee.return }}
+        - ${{ workflow.get_since_conf_filter.return }}
+
+  - name: Build hls ndvi image 
+    id: hls_ndvi_image 
+    task: build_hls_ndvi_image 
+    partial: 
+      client: ${{ workflow.gee_client.return }}
+      ndvi_window_days: null 
+      max_cloud_cover: 30 
+      ndvi_band_name: "NDVI_HSL"
+    mapvalues: 
+      argnames: 
+        - aoi 
+        - since 
+      argvalues: ${{ workflow.zip_aoi_since.return }}
+
+  - name: Build slope image 
+    id: create_slope_image 
+    task: build_slope_image 
+    partial: 
+      client: ${{ workflow.gee_client.return }}
+      dem_asset: "USGS/SRTMGL1_003"
+
+  - name: Add NDVI_HSL column to transects column 
+    id: label_ndvi_hsl 
+    task: label_features_with_image_stat
+    partial: 
+      image: ${{ workflow.create_slope_image.return }}
+      out_column: "NDVI_HSL"
+      region_reducer: null 
+      scale: 30.0 
+      reducer_key: mean 
+    mapvalues: 
+      argnames: gdf 
+      argvalues:  ${{ workflow.add_since_transects.return }}
+  
+  - name: Zip df with since filter and ndvi
+    id: zip_df_ndvi 
+    task: zip_groupbykey 
+    partial: 
+      sequences: 
+        - ${{ workflow.get_since_conf_filter.return }}
+        - ${{ workflow.label_ndvi_hsl.return }}
+
+  - name: Add img_date_hsl_ndvi to transects column 
+    id: add_img_date_hsl_ndvi
+    task: add_constant_column
+    partial: 
+      column: "img_date_hsl_ndvi"
+    mapvalues: 
+      argnames: 
+        - value 
+        - df 
+      argvalues: ${{ workflow.zip_df_ndvi.return }}
+
+  - name: Add slope column to transects column 
+    id: label_slope 
+    task: label_features_with_image_stat
+    partial: 
+      image: ${{ workflow.create_slope_image.return }}
+      out_column: "slope"
+      region_reducer: null 
+      scale: 30.0 
+      reducer_key: mean 
+    mapvalues: 
+      argnames: gdf 
+      argvalues: ${{ workflow.add_img_date_hsl_ndvi.return }}
+
+  - name: Filter column transects for merging with patrol events
+    id: filter_transect_columns
+    task: select_columns 
+    partial: 
+      columns: [
+        "name", 
+        "img_date_hsl_ndvi", 
+        "NDVI_HSL", 
+        "slope", 
+        "geometry"
+        ]
+      raise_on_missing: true 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.label_slope.return }}
+
+  - name: Exclude geometry from transects 
+    id: exclude_geom 
+    task: select_columns 
+    partial: 
+      columns: [
+        "name", 
+        "img_date_hsl_ndvi", 
+        "NDVI_HSL", 
+        "slope", 
+        ]
+      raise_on_missing: true 
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.filter_transect_columns.return }}
+
+  - name: Zip patrols df and transects df
+    id: zip_patrol_transects_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.filter_intersecting_events.return }}
+        - ${{ workflow.exclude_geom.return }}
+
+  - name: Merge patrol events with transects 
+    id: merge_filtered_patrols
+    task: merge_two_dataframes
+    partial: 
+      left_on: "transect_id"
+      right_on: name
+      how: left 
+      left_index: false
+      right_index: false
+      fillna_value: null 
+      on: null 
+    mapvalues:
+      argnames:
+        - left
+        - right 
+      argvalues: ${{ workflow.zip_patrol_transects_df.return }}
+      
+  - name: Select patrol event columns for export 
+    id: select_patrol_event_cols 
+    task: select_columns 
+    partial: 
+      columns: [
+        "transect_id", "level_1", "title", 
+        "patrol_id", "patrol_serial_number",
+        "totalcount", "num_juveniles", "event_type", 
+        "num_observers", "dist_to_centre","geometry",
+        "species", "time", "serial_number", "radialangle", 
+        "survey_id","off_transect_dist", "orig_geometry", 
+        "ortho_dist", "intersects_transect","img_date_hsl_ndvi", 
+        "NDVI_HSL", "slope"
+      ]
+      raise_on_missing: false
+    mapvalues:
+      argnames: df 
+      argvalues: ${{ workflow.merge_filtered_patrols.return }}
+
+  - name: Combine survey name with patrol events for filename
+    id: combine_patrol_event_names
+    task: combine_names 
+    partial: 
+      b: _analysis_data
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Zip filename with patrol events dataframe
+    id: zip_filename_patrol_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.combine_patrol_event_names.return }}
+        - ${{ workflow.select_patrol_event_cols.return }}
+
+  - name: Persist patrol events as csv
+    id: persist_patrol_events_csv
+    task: persist_df_wrapper
+    partial:
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes:
+        - csv
+      filename: null
+      sanitize: false
+    mapvalues:
+      argnames:
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_patrol_df.return }}
+
+  - name: Select columns to persist as gpkg 
+    id: select_gpkg_columns
+    task: select_columns
+    partial:
+      columns: [
+        "serial_number", "transect_id", "dist_to_centre", 
+        "ortho_dist", "intersects_transect", "geometry"    
+      ]
+      raise_on_missing: false
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.select_patrol_event_cols.return }}
+
+  - name: Combine survey name with patrol events for gpkg filename
+    id: combine_gpkg_name
+    task: combine_names 
+    partial: 
+      b: _events
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Zip filename with gpkg columns df
+    id: zip_filename_gpkg_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.combine_gpkg_name.return }}
+        - ${{ workflow.select_gpkg_columns.return }}
+
+  - name: Persist patrol events as gpkg
+    id: persist_patrol_events_gpkg
+    task: persist_df_wrapper 
+    partial:
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - gpkg 
+      filename: null
+      sanitize: false 
+    mapvalues:
+      argnames:
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_gpkg_df.return }}
+
+
+  - name: Combine survey name with transects for gpkg filename
+    id: combine_transect_gpkg_name
+    task: combine_names 
+    partial: 
+      b: _transects
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+  
+  - name: Zip filename with transects df for gpkg export
+    id: zip_filename_transect_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.combine_transect_gpkg_name.return }}
+        - ${{ workflow.filter_transect_columns.return }}
+
+  - name: Persist transects as gpkg 
+    id: persist_transects_gpkg 
+    task: persist_df_wrapper 
+    partial: 
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - gpkg 
+      filename: null 
+      sanitize: false 
+    mapvalues: 
+      argnames: 
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_transect_df.return }}
+  
+  - name: Combine survey name with original transects for gpkg filename
+    id: combine_orig_transect_gpkg_name
+    task: combine_names 
+    partial: 
+      b: _orig_transects
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Zip filename with original transects df for gpkg export
+    id: zip_filename_orig_transect_df
+    task: zip_groupbykey
+    partial:
+      sequences:
+        - ${{ workflow.combine_orig_transect_gpkg_name.return }}
+        - ${{ workflow.reproject_transects.return }} 
+        #${{ workflow.fetch_patrol_transects.return }}
+
+  - name: Persist original transects as gpkg 
+    id: persist_orig_transects_gpkg 
+    task: persist_df_wrapper 
+    partial: 
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - gpkg 
+      filename: null 
+      sanitize: false 
+    mapvalues: 
+      argnames: 
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_orig_transect_df.return }}
+
+  - name: Overall dashboard
+    id: overall_dashboard
+    task: gather_dashboard
+    partial:
+      details: ${{ workflow.workflow_details.return}}
+      widgets: []
+      time_range: ${{ workflow.time_range.return}}
+      groupers: ${{ workflow.groupers.return }}
+      

@@ -1,0 +1,295 @@
+{
+  "properties": {
+    "workflow_details": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Workflow Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Workflow Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object",
+      "description": "Add information that will help to differentiate this workflow from another.",
+      "title": "Set Workflow Details"
+    },
+    "time_range": {
+      "additionalProperties": false,
+      "properties": {
+        "since": {
+          "format": "date-time",
+          "title": "Since",
+          "type": "string",
+          "description": "The start time"
+        },
+        "until": {
+          "format": "date-time",
+          "title": "Until",
+          "type": "string",
+          "description": "The end time"
+        },
+        "timezone": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/TimezoneInfo"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        },
+        "time_format": {
+          "default": "%d %b %Y %H:%M:%S",
+          "title": "Time Format",
+          "type": "string",
+          "description": "The time format",
+          "ecoscope:advanced": true
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ],
+      "type": "object",
+      "description": "Choose the period of time to analyze.",
+      "title": "Time Range"
+    },
+    "gee_client": {
+      "additionalProperties": false,
+      "properties": {
+        "data_source": {
+          "$ref": "#/$defs/GoogleEarthEngineConnection",
+          "title": "",
+          "description": "Select one of your configured data sources."
+        }
+      },
+      "required": [
+        "data_source"
+      ],
+      "type": "object",
+      "title": "Configure Google Earth Engine connection"
+    },
+    "connection_config": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ConnectionConfigEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "type": "object",
+      "title": "Configure EarthRanger connection"
+    }
+  },
+  "$defs": {
+    "TimezoneInfo": {
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "tzCode": {
+          "title": "Tzcode",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "utc": {
+          "title": "Utc",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "tzCode",
+        "name",
+        "utc"
+      ],
+      "title": "TimezoneInfo",
+      "type": "object"
+    },
+    "GoogleEarthEngineConnection": {
+      "properties": {
+        "name": {
+          "title": "Data Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GoogleEarthEngineConnection",
+      "type": "object"
+    },
+    "ConnectionConfigEntry": {
+      "properties": {
+        "earthranger": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/EarthRangerConfig"
+            }
+          ],
+          "title": ""
+        },
+        "surveys": {
+          "items": {
+            "$ref": "#/$defs/SurveyConfig"
+          },
+          "title": "Surveys",
+          "type": "array"
+        }
+      },
+      "required": [
+        "earthranger",
+        "surveys"
+      ],
+      "title": "EarthRangerConnection",
+      "type": "object"
+    },
+    "EarthRangerConfig": {
+      "properties": {
+        "server": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/EarthRangerConnection"
+            }
+          ],
+          "description": "Select one of your configured data sources.",
+          "title": ""
+        },
+        "patrol_type_id": {
+          "description": "Numeric or UUID identifier for the patrol type in EarthRanger.",
+          "title": "Patrol Type ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "patrol_type_id"
+      ],
+      "title": "EarthRangerConfig",
+      "type": "object"
+    },
+    "EarthRangerConnection": {
+      "properties": {
+        "name": {
+          "title": "Data Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "EarthRangerConnection",
+      "type": "object"
+    },
+    "SurveyConfig": {
+      "properties": {
+        "surveyName": {
+          "description": "A unique name identifying this survey (e.g. 'Amboseli Elephant Survey Q1 2026').",
+          "title": "Survey Name",
+          "type": "string"
+        },
+        "time_range": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/SurveyTimeRange"
+            }
+          ],
+          "description": "The date/time window covered by this survey.",
+          "title": "Time Range"
+        },
+        "erSpatialTransectsGroupId": {
+          "description": "EarthRanger spatial group ID that contains the transect features.",
+          "title": "Transects Group ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "surveyName",
+        "time_range",
+        "erSpatialTransectsGroupId"
+      ],
+      "title": "",
+      "type": "object"
+    },
+    "SurveyTimeRange": {
+      "properties": {
+        "since": {
+          "format": "date-time",
+          "title": "Since",
+          "type": "string"
+        },
+        "until": {
+          "format": "date-time",
+          "title": "Until",
+          "type": "string"
+        },
+        "timezone": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/TimezoneInfo"
+            }
+          ],
+          "default": {
+            "label": "UTC",
+            "tzCode": "UTC",
+            "name": "UTC",
+            "utc": "+00:00"
+          },
+          "title": "Timezone"
+        },
+        "time_format": {
+          "default": "%d %b %Y %H:%M:%S",
+          "description": "The time format",
+          "ecoscope:advanced": true,
+          "title": "Time Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ],
+      "title": "SurveyTimeRange",
+      "type": "object"
+    }
+  },
+  "uiSchema": {
+    "workflow_details": {
+      "ui:order": [
+        "name",
+        "description"
+      ]
+    },
+    "time_range": {
+      "ui:order": [
+        "since",
+        "until",
+        "timezone",
+        "time_format"
+      ]
+    },
+    "ui:order": [
+      "workflow_details",
+      "time_range",
+      "gee_client",
+      "connection_config"
+    ]
+  },
+  "additionalProperties": false
+}
