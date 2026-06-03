@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSC Analysis — User Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #2d2d2d;
+      background: #f7f8fa;
+    }
+
+    /* ── Layout ── */
+    .page {
+      max-width: 860px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 48px 56px 72px;
+      min-height: 100vh;
+    }
+
+    /* ── Colour tokens ── */
+    :root {
+      --green-dark: #115631;
+      --green-mid:  #2d6a4f;
+      --amber:      #e7a553;
+      --slate:      #3d3d3d;
+      --light-grey: #f5f5f5;
+      --mid-grey:   #cccccc;
+      --border:     #e2e4e8;
+    }
+
+    /* ── Header / cover ── */
+    .cover {
+      border-left: 5px solid var(--green-dark);
+      padding: 20px 24px;
+      margin-bottom: 40px;
+      background: #f0f7f2;
+      border-radius: 0 6px 6px 0;
+    }
+    .cover h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--green-dark);
+      margin-bottom: 6px;
+    }
+    .cover .subtitle {
+      font-size: 0.95rem;
+      color: #555;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--green-dark);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 9px;
+      border-radius: 10px;
+      margin-top: 10px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Headings ── */
+    h2 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--green-dark);
+      margin: 40px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--green-dark);
+    }
+    h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--green-mid);
+      margin: 28px 0 8px;
+    }
+    h4 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--slate);
+      margin: 18px 0 6px;
+    }
+
+    /* ── Body text ── */
+    p { margin-bottom: 12px; }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 32px 0;
+    }
+
+    /* ── Steps ── */
+    .step {
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      background: var(--green-dark);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .step-body { flex: 1; }
+
+    /* ── Config sections ── */
+    .config-step {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 36px;
+    }
+    .config-step-header {
+      background: var(--green-dark);
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .config-step-header .num {
+      background: rgba(255,255,255,0.25);
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .config-step-header h3 {
+      color: #fff;
+      margin: 0;
+      font-size: 1rem;
+    }
+    .config-step-body {
+      padding: 20px 24px;
+    }
+
+    /* ── Code / pre ── */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.85em;
+      background: var(--light-grey);
+      color: #c0392b;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: var(--light-grey);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 18px;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+    pre code { background: none; color: #2d2d2d; padding: 0; }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin: 14px 0;
+    }
+    thead tr { background: var(--green-dark); color: #fff; }
+    thead th {
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    tbody tr:nth-child(even) { background: var(--light-grey); }
+    tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Screenshots ── */
+    .screenshot-wrap {
+      margin: 20px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+    .screenshot-wrap img {
+      width: 100%;
+      display: block;
+    }
+    .screenshot-caption {
+      font-size: 0.8rem;
+      color: #777;
+      background: var(--light-grey);
+      padding: 6px 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Callouts ── */
+    .callout {
+      border-left: 4px solid var(--amber);
+      background: #fff8e1;
+      padding: 10px 16px;
+      border-radius: 0 6px 6px 0;
+      font-size: 0.88rem;
+      color: #555;
+      margin: 14px 0;
+    }
+    .callout strong { color: #333; }
+
+    /* ── Bullet lists ── */
+    ul, ol { padding-left: 22px; margin-bottom: 12px; }
+    li { margin-bottom: 5px; }
+
+    /* ── Output files section ── */
+    .output-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .output-item {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .output-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .output-file { font-family: monospace; font-size: 0.82rem; color: var(--green-dark); font-weight: 600; }
+    .output-desc { font-size: 0.85rem; color: #555; margin-top: 2px; }
+
+    /* ── Run steps ── */
+    .run-steps { list-style: none; padding: 0; counter-reset: run-step; }
+    .run-steps li {
+      counter-increment: run-step;
+      display: flex;
+      gap: 14px;
+      margin-bottom: 10px;
+      align-items: flex-start;
+    }
+    .run-steps li::before {
+      content: counter(run-step);
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: var(--green-mid);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 3px;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Cover ── -->
+  <div class="cover">
+    <h1>DSC Analysis</h1>
+    <p class="subtitle">Distance Sample Count — Wildlife Survey Analysis Pipeline</p>
+    <span class="badge">dsc_analysis</span>
+  </div>
+
+  <p>
+    This guide walks you through configuring and running the Distance Sample Count (DSC) Analysis
+    workflow, which ingests wildlife survey patrol data from EarthRanger, calculates distance
+    sampling geometry, labels transects with satellite-derived environmental covariates, and
+    exports analysis-ready datasets for population density modelling.
+  </p>
+
+  <hr />
+
+  <!-- ── Overview ── -->
+  <h2>Overview</h2>
+
+  <p>
+    The workflow supports <strong>multiple surveys per run</strong>. For each configured survey it produces:
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Output</th><th>Format</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>{survey}_analysis_metadata</code></td>
+        <td>CSV</td>
+        <td>Survey event metadata — transect IDs, team members, observer counts, event types, lat/lon</td>
+      </tr>
+      <tr>
+        <td><code>{survey}_analysis_data</code></td>
+        <td>CSV</td>
+        <td>Wildlife observations enriched with off-transect distances, orthogonal distances, estimated animal positions, HLS NDVI, and terrain slope</td>
+      </tr>
+      <tr>
+        <td><code>{survey}_events</code></td>
+        <td>GeoPackage</td>
+        <td>Spatial point layer of wildlife observations with key distance sampling geometry columns</td>
+      </tr>
+      <tr>
+        <td><code>{survey}_transects</code></td>
+        <td>GeoPackage</td>
+        <td>Visited transect lines labelled with mean NDVI and slope from Google Earth Engine</td>
+      </tr>
+      <tr>
+        <td><code>{survey}_orig_transects</code></td>
+        <td>GeoPackage</td>
+        <td>Unprocessed transect lines as fetched from EarthRanger (EPSG:4326)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <!-- ── Prerequisites ── -->
+  <h2>Prerequisites</h2>
+
+  <p>Before running the workflow, ensure you have:</p>
+  <ul>
+    <li>
+      Access to an <strong>EarthRanger</strong> instance with DSC patrol data logged using:
+      <ul>
+        <li><code>distancecountpatrol_rep</code> — survey metadata (transect ID, team, observer count)</li>
+        <li><code>distancecountwildlife_rep</code> — wildlife observations (species, count, distance, radial angle)</li>
+      </ul>
+    </li>
+    <li>A <strong>Google Earth Engine</strong> service account configured in Ecoscope (for NDVI and slope imagery)</li>
+    <li>The <strong>EarthRanger spatial group ID</strong> for each survey's transect lines</li>
+    <li>The <strong>patrol type ID</strong> (numeric or UUID) for the DSC patrol type in EarthRanger</li>
+  </ul>
+
+  <hr />
+
+  <!-- ── Configuration ── -->
+  <h2>Step-by-Step Configuration</h2>
+
+  <!-- Step 1 -->
+  <div class="config-step">
+    <div class="config-step-header">
+      <div class="num">1</div>
+      <h3>Add the Workflow Template</h3>
+    </div>
+    <div class="config-step-body">
+      <p>
+        In Ecoscope, go to <strong>Workflow Templates</strong> and click <strong>Add Workflow Template</strong>.
+        Paste the GitHub repository URL into the <strong>Github Link</strong> field and click <strong>Add Template</strong>.
+      </p>
+      <pre><code>https://github.com/wildlife-dynamics/dsc_analysis.git</code></pre>
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/add_workflow.png" alt="Add Workflow Template screen showing the GitHub URL field" />
+        <div class="screenshot-caption">Add Workflow Template — paste the repository URL and click Add Template</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="config-step">
+    <div class="config-step-header">
+      <div class="num">2</div>
+      <h3>Select the Workflow</h3>
+    </div>
+    <div class="config-step-body">
+      <p>
+        After the template is added it appears in the <strong>Workflow Templates</strong> list as
+        <strong>dsc_analysis</strong>. Click the card to open the workflow configuration form.
+      </p>
+      <div class="callout">
+        <strong>Note:</strong> The card may show <em>Initializing…</em> briefly while the environment is set up.
+      </div>
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/select_workflow.png" alt="Workflow Templates list showing the dsc_analysis card selected" />
+        <div class="screenshot-caption">Select the dsc_analysis card from the Workflow Templates library</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="config-step">
+    <div class="config-step-header">
+      <div class="num">3</div>
+      <h3>Set Workflow Details and Time Range</h3>
+    </div>
+    <div class="config-step-body">
+      <p>The configuration form opens with two sections at the top.</p>
+
+      <h4>Set Workflow Details</h4>
+      <table>
+        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>Workflow Name</td><td>A short name to identify this run (required)</td></tr>
+          <tr><td>Workflow Description</td><td>Optional notes, e.g. survey season or region</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Time Range</h4>
+      <p>
+        This field is required on all Ecoscope workflows. It is used for timestamp display and UTC
+        conversion only — it does <strong>not</strong> filter which patrol events are fetched from
+        EarthRanger. Each survey's own time window (configured in Step 5) controls which data is
+        pulled from EarthRanger.
+      </p>
+      <div class="callout">
+        <strong>Tip:</strong> Set this to a window that broadly covers all surveys in the run,
+        or leave it wider than needed — it will not cause over-fetching.
+      </div>
+      <table>
+        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>Timezone</td><td>Local timezone for display, e.g. <code>Africa/Nairobi (UTC+03:00)</code></td></tr>
+          <tr><td>Since</td><td>Broad start boundary covering all surveys in this run</td></tr>
+          <tr><td>Until</td><td>Broad end boundary covering all surveys in this run</td></tr>
+        </tbody>
+      </table>
+
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/set_workflow_details_time_range.png" alt="Configuration form showing Set Workflow Details and Time Range sections" />
+        <div class="screenshot-caption">Set Workflow Details and Time Range — the first two sections of the configuration form</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="config-step">
+    <div class="config-step-header">
+      <div class="num">4</div>
+      <h3>Configure Google Earth Engine Connection</h3>
+    </div>
+    <div class="config-step-body">
+      <p>
+        Select your Google Earth Engine service account from the <strong>Data Source</strong> dropdown.
+        This connection is used to build HLS NDVI composites and terrain slope images for transect labelling.
+      </p>
+      <div class="callout">
+        <strong>Note:</strong> Only one GEE connection is needed — it is shared across all surveys in the run.
+      </div>
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/configure_gee.png" alt="Configure Google Earth Engine connection section with Data Source dropdown" />
+        <div class="screenshot-caption">Configure Google Earth Engine connection — select your GEE service account</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="config-step">
+    <div class="config-step-header">
+      <div class="num">5</div>
+      <h3>Configure EarthRanger Connection and Surveys</h3>
+    </div>
+    <div class="config-step-body">
+      <p>
+        Scroll down to <strong>Configure EarthRanger connection</strong> and click <strong>+ Add</strong>
+        to add an EarthRanger site entry.
+      </p>
+
+      <h4>EarthRanger Connection</h4>
+      <table>
+        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Data Source</td>
+            <td>Select the EarthRanger connection from the dropdown (e.g. <code>Amboseli Trust for Elephants</code>)</td>
+          </tr>
+          <tr>
+            <td>Patrol Type ID</td>
+            <td>The numeric or UUID identifier for the DSC patrol type in EarthRanger</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/configure_earthranger.png" alt="Configure EarthRanger connection section showing data source dropdown and patrol type ID field" />
+        <div class="screenshot-caption">Configure EarthRanger connection — select your data source and enter the patrol type ID</div>
+      </div>
+
+      <h4>Surveys</h4>
+      <p>
+        Under the connection entry, click <strong>+ Add</strong> inside the <strong>Surveys</strong>
+        section to define each survey. Multiple surveys can be added under a single EarthRanger connection.
+      </p>
+      <table>
+        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Survey Name</td>
+            <td>
+              A unique name for this survey — used as the output filename prefix
+              (e.g. <code>Amboseli_Elephant_Survey_Q1_2026</code>)
+            </td>
+          </tr>
+          <tr><td>Since</td><td>Start of the data fetch window — patrol events on or after this time are retrieved from EarthRanger</td></tr>
+          <tr><td>Until</td><td>End of the data fetch window — patrol events up to this time are retrieved from EarthRanger</td></tr>
+          <tr><td>Timezone</td><td>The timezone for this survey's time window</td></tr>
+          <tr>
+            <td>Transects Group ID</td>
+            <td>The EarthRanger spatial group ID that contains the transect line features for this survey</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="screenshot-wrap">
+        <img src="data/screenshots/set_survey_details.png" alt="Survey details form showing Survey Name, Time Range, Timezone, and Transects Group ID fields" />
+        <div class="screenshot-caption">Survey details — fill in the name, time window, timezone, and transect group ID for each survey</div>
+      </div>
+
+      <div class="callout">
+        <strong>Multiple surveys:</strong> To run multiple surveys from the <strong>same EarthRanger site</strong>,
+        add additional entries in the <strong>Surveys</strong> list within one connection entry.
+        To run surveys from <strong>different EarthRanger sites</strong>, click the outer <strong>+ Add</strong>
+        button to add a second connection entry.
+      </div>
+    </div>
+  </div>
+
+  <hr />
+
+  <!-- ── Running ── -->
+  <h2>Running the Workflow</h2>
+
+  <p>Once all parameters are configured, click <strong>Submit</strong>. For each survey the workflow will:</p>
+
+  <ol class="run-steps">
+    <li>Fetch patrol events matching the configured patrol type ID and survey time window from EarthRanger.</li>
+    <li>Fetch transect lines from the configured EarthRanger spatial group.</li>
+    <li>Retrieve individual wildlife observation events from the patrol event IDs.</li>
+    <li>Process and normalise survey metadata events — extract transect ID, team members, and observer count.</li>
+    <li>Propagate metadata fields to wildlife observation rows using backward/forward fill within each patrol.</li>
+    <li>Reproject events and transects to a UTM coordinate system for metric distance calculations.</li>
+    <li>Calculate the perpendicular distance from each observer position to the transect centreline (<code>off_transect_dist</code>).</li>
+    <li>Estimate the true animal position from each observation's radial angle and distance to centre (<code>dist_to_centre</code>).</li>
+    <li>Calculate the orthogonal distance from the estimated animal position to the transect centreline (<code>ortho_dist</code>).</li>
+    <li>Filter events to those that intersect a 500 m transect buffer corridor; discard unvisited transects.</li>
+    <li>Label visited transects with mean HLS NDVI (max 30 % cloud cover) and terrain slope from Google Earth Engine (30 m resolution).</li>
+    <li>Merge transect covariates into the wildlife observation dataset.</li>
+    <li>Export all outputs per survey to <code>$ECOSCOPE_WORKFLOWS_RESULTS</code>.</li>
+  </ol>
+
+  <hr />
+
+  <!-- ── Output Files ── -->
+  <h2>Output Files</h2>
+
+  <p>
+    All outputs are written to <code>$ECOSCOPE_WORKFLOWS_RESULTS/</code>. Five files are produced for
+    <strong>each survey</strong> — <code>{survey}</code> is replaced by the Survey Name you entered in Step 5.
+  </p>
+
+  <div class="output-grid">
+    <div class="output-item">
+      <div class="output-icon">📄</div>
+      <div>
+        <div class="output-file">{survey}_analysis_metadata.csv</div>
+        <div class="output-desc">Survey metadata events: transect IDs, team members, observer counts, event types, lat/lon</div>
+      </div>
+    </div>
+    <div class="output-item">
+      <div class="output-icon">📊</div>
+      <div>
+        <div class="output-file">{survey}_analysis_data.csv</div>
+        <div class="output-desc">
+          Wildlife observations with all distance sampling fields: species, total count, juveniles,
+          <code>dist_to_centre</code>, <code>radialangle</code>, <code>off_transect_dist</code>,
+          <code>ortho_dist</code>, estimated geometry, <code>NDVI_HSL</code>, <code>slope</code>,
+          <code>survey_id</code>, and more
+        </div>
+      </div>
+    </div>
+    <div class="output-item">
+      <div class="output-icon">📍</div>
+      <div>
+        <div class="output-file">{survey}_events.gpkg</div>
+        <div class="output-desc">
+          Spatial point layer of wildlife observations.
+          Columns: <code>serial_number</code>, <code>transect_id</code>,
+          <code>dist_to_centre</code>, <code>ortho_dist</code>,
+          <code>intersects_transect</code>, <code>geometry</code>
+        </div>
+      </div>
+    </div>
+    <div class="output-item">
+      <div class="output-icon">🗺️</div>
+      <div>
+        <div class="output-file">{survey}_transects.gpkg</div>
+        <div class="output-desc">
+          Visited transect lines in EPSG:4326 with <code>NDVI_HSL</code>,
+          <code>slope</code>, and <code>img_date_hsl_ndvi</code> columns
+        </div>
+      </div>
+    </div>
+    <div class="output-item">
+      <div class="output-icon">📐</div>
+      <div>
+        <div class="output-file">{survey}_orig_transects.gpkg</div>
+        <div class="output-desc">Original unprocessed transect lines as fetched from EarthRanger (EPSG:4326)</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
