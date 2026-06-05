@@ -27,7 +27,16 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     create_connection_configs as create_connection_configs,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    fetch_patrols_from_id as fetch_patrols_from_id,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     split_connection_configs as split_connection_configs,
+)
+from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
+    process_relocations as process_relocations,
+)
+from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
+    relocations_to_trajectory as relocations_to_trajectory,
 )
 
 fetch_patrol_events = create_task_magicmock(  # 🧪
@@ -149,6 +158,7 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     to_ee_feature_collection as to_ee_feature_collection,
 )
+from ecoscope_workflows_ext_ecoscope.tasks.analysis import summarize_df as summarize_df
 
 from ..params import Params
 
@@ -165,6 +175,9 @@ def main(params: Params):
         "gee_client": [],
         "connection_config": [],
         "split_connection_config": ["connection_config"],
+        "fetch_patrols_from_ids": ["split_connection_config"],
+        "patrol_relocs": ["fetch_patrols_from_ids"],
+        "patrol_traj": ["patrol_relocs"],
         "retrieve_patrol_events": ["split_connection_config"],
         "set_patrol_index": ["retrieve_patrol_events"],
         "fetch_patrol_transects": ["split_connection_config"],
@@ -186,6 +199,14 @@ def main(params: Params):
         "combine_survey_event_names": ["retrieve_survey_name"],
         "zip_filename_survey_df": ["combine_survey_event_names", "drop_null_cols"],
         "persist_survey_event_metadata": ["zip_filename_survey_df"],
+        "combine_survey_traj_name": ["retrieve_survey_name"],
+        "zip_filename_traj": ["combine_survey_traj_name", "patrol_traj"],
+        "persist_patrol_traj": ["zip_filename_traj"],
+        "rename_patrol_traj_cols": ["patrol_traj"],
+        "summarize_dsc_patrol": ["rename_patrol_traj_cols"],
+        "combine_survey_summary_name": ["retrieve_survey_name"],
+        "zip_filename_summary": ["combine_survey_summary_name", "summarize_dsc_patrol"],
+        "persist_patrol_summary": ["zip_filename_summary"],
         "select_event_details": ["fetch_events_from_ids"],
         "zip_patrol_events_df": ["set_patrol_index", "select_event_details"],
         "merge_patrol_events": ["zip_patrol_events_df"],
@@ -364,6 +385,107 @@ def main(params: Params):
             }
             | (params_dict.get("split_connection_config") or {}),
             method="call",
+        ),
+        "fetch_patrols_from_ids": Node(
+            async_task=fetch_patrols_from_id.validate()
+            .set_task_instance_id("fetch_patrols_from_ids")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial=(params_dict.get("fetch_patrols_from_ids") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["connection_survey"],
+                "argvalues": DependsOn("split_connection_config"),
+            },
+        ),
+        "patrol_relocs": Node(
+            async_task=process_relocations.validate()
+            .set_task_instance_id("patrol_relocs")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "relocs_columns": [
+                    "patrol_id",
+                    "patrol_start_time",
+                    "patrol_end_time",
+                    "patrol_type__value",
+                    "patrol_type__display",
+                    "patrol_serial_number",
+                    "patrol_status",
+                    "patrol_subject",
+                    "groupby_col",
+                    "fixtime",
+                    "junk_status",
+                    "extra__source",
+                    "geometry",
+                ],
+                "filter_point_coords": [
+                    {
+                        "x": 180.0,
+                        "y": 90.0,
+                    },
+                    {
+                        "x": 0.0,
+                        "y": 0.0,
+                    },
+                    {
+                        "x": 1.0,
+                        "y": 1.0,
+                    },
+                ],
+            }
+            | (params_dict.get("patrol_relocs") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["observations"],
+                "argvalues": DependsOn("fetch_patrols_from_ids"),
+            },
+        ),
+        "patrol_traj": Node(
+            async_task=relocations_to_trajectory.validate()
+            .set_task_instance_id("patrol_traj")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "trajectory_segment_filter": {
+                    "min_length_meters": 0.1,
+                    "max_length_meters": 100000,
+                    "min_time_secs": 20,
+                    "max_time_secs": 21600,
+                    "min_speed_kmhr": 1.5,
+                    "max_speed_kmhr": 100,
+                },
+            }
+            | (params_dict.get("patrol_traj") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["relocations"],
+                "argvalues": DependsOn("patrol_relocs"),
+            },
         ),
         "retrieve_patrol_events": Node(
             async_task=fetch_patrol_events.validate()
@@ -876,6 +998,229 @@ def main(params: Params):
             kwargs={
                 "argnames": ["filename_prefix", "df"],
                 "argvalues": DependsOn("zip_filename_survey_df"),
+            },
+        ),
+        "combine_survey_traj_name": Node(
+            async_task=combine_names.validate()
+            .set_task_instance_id("combine_survey_traj_name")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "b": "_patrol_trajectories",
+            }
+            | (params_dict.get("combine_survey_traj_name") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["a"],
+                "argvalues": DependsOn("retrieve_survey_name"),
+            },
+        ),
+        "zip_filename_traj": Node(
+            async_task=zip_groupbykey.validate()
+            .set_task_instance_id("zip_filename_traj")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "sequences": [
+                    DependsOn("combine_survey_traj_name"),
+                    DependsOn("patrol_traj"),
+                ],
+            }
+            | (params_dict.get("zip_filename_traj") or {}),
+            method="call",
+        ),
+        "persist_patrol_traj": Node(
+            async_task=persist_df_wrapper.validate()
+            .set_task_instance_id("persist_patrol_traj")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "root_path": os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
+                "filetypes": [
+                    "gpkg",
+                ],
+                "filename": None,
+                "sanitize": False,
+            }
+            | (params_dict.get("persist_patrol_traj") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["filename_prefix", "df"],
+                "argvalues": DependsOn("zip_filename_traj"),
+            },
+        ),
+        "rename_patrol_traj_cols": Node(
+            async_task=map_columns.validate()
+            .set_task_instance_id("rename_patrol_traj_cols")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "raise_if_not_found": False,
+                "rename_columns": {
+                    "extra__patrol_type__value": "patrol_type",
+                    "extra__patrol_serial_number": "patrol_serial_number",
+                    "extra__patrol_status": "patrol_status",
+                    "extra__patrol_subject": "patrol_subject",
+                    "extra__patrol_id": "patrol_id",
+                },
+            }
+            | (params_dict.get("rename_patrol_traj_cols") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("patrol_traj"),
+            },
+        ),
+        "summarize_dsc_patrol": Node(
+            async_task=summarize_df.validate()
+            .set_task_instance_id("summarize_dsc_patrol")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "groupby_cols": [
+                    "patrol_subject",
+                ],
+                "reset_index": True,
+                "summary_params": [
+                    {
+                        "display_name": "no_of_patrols",
+                        "aggregator": "nunique",
+                        "column": "patrol_id",
+                    },
+                    {
+                        "display_name": "total_distance_km",
+                        "aggregator": "sum",
+                        "column": "dist_meters",
+                        "original_unit": "m",
+                        "new_unit": "km",
+                    },
+                    {
+                        "display_name": "total_time",
+                        "aggregator": "sum",
+                        "column": "timespan_seconds",
+                        "original_unit": "s",
+                        "new_unit": "h",
+                    },
+                ],
+            }
+            | (params_dict.get("summarize_dsc_patrol") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("rename_patrol_traj_cols"),
+            },
+        ),
+        "combine_survey_summary_name": Node(
+            async_task=combine_names.validate()
+            .set_task_instance_id("combine_survey_summary_name")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "b": "_patrol_summary",
+            }
+            | (params_dict.get("combine_survey_summary_name") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["a"],
+                "argvalues": DependsOn("retrieve_survey_name"),
+            },
+        ),
+        "zip_filename_summary": Node(
+            async_task=zip_groupbykey.validate()
+            .set_task_instance_id("zip_filename_summary")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "sequences": [
+                    DependsOn("combine_survey_summary_name"),
+                    DependsOn("summarize_dsc_patrol"),
+                ],
+            }
+            | (params_dict.get("zip_filename_summary") or {}),
+            method="call",
+        ),
+        "persist_patrol_summary": Node(
+            async_task=persist_df_wrapper.validate()
+            .set_task_instance_id("persist_patrol_summary")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "root_path": os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
+                "filetypes": [
+                    "csv",
+                ],
+                "filename": None,
+                "sanitize": False,
+            }
+            | (params_dict.get("persist_patrol_summary") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["filename_prefix", "df"],
+                "argvalues": DependsOn("zip_filename_summary"),
             },
         ),
         "select_event_details": Node(

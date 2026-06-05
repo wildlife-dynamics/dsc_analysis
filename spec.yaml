@@ -29,7 +29,7 @@ requirements:
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
   - name: ecoscope-workflows-ext-distance-sample-counts
-    version: "0.0.2.*"
+    version: "0.0.3.*"
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
 task-instance-defaults:
@@ -66,6 +66,58 @@ workflow:
     task: split_connection_configs
     partial:
       connection_configs: ${{ workflow.connection_config.return }}
+
+  # fetch patrols 
+  - name: Fetch patrols from patrol ids 
+    id: fetch_patrols_from_ids
+    task: fetch_patrols_from_id
+    mapvalues: 
+      argnames: connection_survey 
+      argvalues: ${{ workflow.split_connection_config.return }}
+
+  - name: Convert patrols to relocs
+    id: patrol_relocs
+    task: process_relocations
+    partial:
+      relocs_columns:
+        - patrol_id
+        - patrol_start_time
+        - patrol_end_time
+        - patrol_type__value
+        - patrol_type__display
+        - patrol_serial_number
+        - patrol_status
+        - patrol_subject
+        - groupby_col
+        - fixtime
+        - junk_status
+        - extra__source
+        - geometry
+      filter_point_coords:
+        - x: 180.000000
+          y: 90.000000
+        - x: 0.000000
+          y: 0.000000
+        - x: 1.000000
+          y: 1.000000
+    mapvalues:
+      argnames: observations
+      argvalues: ${{ workflow.fetch_patrols_from_ids.return }}
+
+  - name: Trajectory segment filter 
+    id: patrol_traj 
+    task: relocations_to_trajectory
+    partial: 
+      trajectory_segment_filter:
+        min_length_meters: 0.10
+        max_length_meters: 100000
+        min_time_secs: 20
+        max_time_secs: 21600
+        min_speed_kmhr: 1.5
+        max_speed_kmhr: 100
+    mapvalues: 
+      argnames: relocations 
+      argvalues: ${{ workflow.patrol_relocs.return }}
 
   # fetch patrol events for each survey connectionconfig
   - name: Fetch patrol events
@@ -302,6 +354,111 @@ workflow:
         - df
       argvalues: ${{ workflow.zip_filename_survey_df.return }}
 
+  - name: Combine survey name with patrol trajectories for filename 
+    id: combine_survey_traj_name 
+    task: combine_names 
+    partial: 
+      b: _patrol_trajectories
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+  
+  - name: Zip filename with patrol trajectories
+    id: zip_filename_traj
+    task: zip_groupbykey
+    partial: 
+      sequences: 
+        - ${{ workflow.combine_survey_traj_name.return }}
+        - ${{ workflow.patrol_traj.return }}
+
+  - name: Persist patrol trajectories with dynamic filename
+    id: persist_patrol_traj
+    task: persist_df_wrapper 
+    partial:
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - gpkg
+      filename: null
+      sanitize: false 
+    mapvalues:
+      argnames:
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_traj.return }}
+
+  - name: Rename patrol trajectory columns 
+    id: rename_patrol_traj_cols 
+    task: map_columns
+    partial: 
+      raise_if_not_found: false 
+      drop_columns: []
+      retain_columns: []
+      rename_columns: 
+        extra__patrol_type__value: patrol_type
+        extra__patrol_serial_number: patrol_serial_number
+        extra__patrol_status: patrol_status
+        extra__patrol_subject: patrol_subject
+        extra__patrol_id: patrol_id
+    mapvalues: 
+      argnames: df 
+      argvalues: ${{ workflow.patrol_traj.return }}
+
+  - name: Summarize patrol information 
+    id: summarize_dsc_patrol
+    task: summarize_df 
+    partial:  
+      groupby_cols: 
+        - patrol_subject 
+      reset_index: true
+      summary_params: 
+        - display_name: no_of_patrols 
+          aggregator: nunique 
+          column: patrol_id 
+        - display_name: total_distance_km
+          aggregator: sum 
+          column: dist_meters 
+          original_unit: m 
+          new_unit: km 
+        - display_name: total_time 
+          aggregator: sum 
+          column: timespan_seconds
+          original_unit: s
+          new_unit: h
+    mapvalues:
+      argnames: df 
+      argvalues: ${{ workflow.rename_patrol_traj_cols.return }}
+    
+  - name: Combine survey name with patrol summary for filename 
+    id: combine_survey_summary_name 
+    task: combine_names 
+    partial: 
+      b: _patrol_summary
+    mapvalues: 
+      argnames: a
+      argvalues: ${{ workflow.retrieve_survey_name.return }}
+
+  - name: Zip filename with patrol summary
+    id: zip_filename_summary
+    task: zip_groupbykey
+    partial: 
+      sequences: 
+        - ${{ workflow.combine_survey_summary_name.return }}
+        - ${{ workflow.summarize_dsc_patrol.return }}
+
+  - name: Persist patrol summary with dynamic filename
+    id: persist_patrol_summary
+    task: persist_df_wrapper 
+    partial:
+      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+      filetypes: 
+        - csv 
+      filename: null
+      sanitize: false 
+    mapvalues:
+      argnames:
+        - filename_prefix
+        - df
+      argvalues: ${{ workflow.zip_filename_summary.return }}
   - name: Select event_details column from events and merge with patrols 
     id: select_event_details
     task: select_columns

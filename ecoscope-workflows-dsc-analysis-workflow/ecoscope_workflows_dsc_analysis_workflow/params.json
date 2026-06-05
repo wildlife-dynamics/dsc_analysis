@@ -157,7 +157,7 @@
         "earthranger",
         "surveys"
       ],
-      "title": "",
+      "title": "ConnectionConfigEntry",
       "type": "object"
     },
     "EarthRangerConfig": {
@@ -224,7 +224,7 @@
         "time_range",
         "erSpatialTransectsGroupId"
       ],
-      "title": "",
+      "title": "SurveyConfig",
       "type": "object"
     },
     "SurveyTimeRange": {
@@ -232,14 +232,12 @@
         "since": {
           "format": "date-time",
           "title": "Since",
-          "type": "string",
-          "description": "The start time"
+          "type": "string"
         },
         "until": {
           "format": "date-time",
           "title": "Until",
-          "type": "string",
-          "description": "The end time"
+          "type": "string"
         },
         "timezone": {
           "allOf": [

@@ -157,7 +157,7 @@
         "earthranger",
         "surveys"
       ],
-      "title": "EarthRangerConnection",
+      "title": "",
       "type": "object"
     },
     "EarthRangerConfig": {
@@ -237,27 +237,6 @@
         "until": {
           "format": "date-time",
           "title": "Until",
-          "type": "string"
-        },
-        "timezone": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/TimezoneInfo"
-            }
-          ],
-          "default": {
-            "label": "UTC",
-            "tzCode": "UTC",
-            "name": "UTC",
-            "utc": "+00:00"
-          },
-          "title": "Timezone"
-        },
-        "time_format": {
-          "default": "%d %b %Y %H:%M:%S",
-          "description": "The time format",
-          "ecoscope:advanced": true,
-          "title": "Time Format",
           "type": "string"
         }
       },
