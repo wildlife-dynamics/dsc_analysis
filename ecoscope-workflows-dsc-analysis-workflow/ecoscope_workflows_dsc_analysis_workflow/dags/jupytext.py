@@ -1577,7 +1577,7 @@ map_patrol_df = (
             "event_details__distancecountwildlife_radialangle": "radialangle",
             "event_details__distancecountwildlife_species": "species",
             "event_details__distancecountwildlife_totalcount": "totalcount",
-            "event_details__Transect_ID": "transect_id",
+            "event_details__Transect_ID": "transect_id_v2",
             "event_details__Team_members": "Team Members",
             "event_details__Number_of_observers": "num_observers",
             "event_details__Number_of_Observers": "num_observers",
@@ -1586,6 +1586,96 @@ map_patrol_df = (
         **map_patrol_df_params,
     )
     .mapvalues(argnames=["df"], argvalues=normalize_event_details)
+)
+
+
+# %% [markdown]
+# ## Normalize transect_id column name across schemas
+
+# %%
+# parameters
+
+normalize_transect_id_params = dict()
+
+# %%
+# call the task
+
+
+normalize_transect_id = (
+    map_columns.set_task_instance_id("normalize_transect_id")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(
+        raise_if_not_found=False,
+        drop_columns=[],
+        retain_columns=[],
+        rename_columns={"transect_id_v2": "transect_id"},
+        **normalize_transect_id_params,
+    )
+    .mapvalues(argnames=["df"], argvalues=map_patrol_df)
+)
+
+
+# %% [markdown]
+# ## Parse list column from Transect ID column
+
+# %%
+# parameters
+
+parse_transect_id_params = dict()
+
+# %%
+# call the task
+
+
+parse_transect_id = (
+    parse_list_column.set_task_instance_id("parse_transect_id")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(column="transect_id", **parse_transect_id_params)
+    .mapvalues(argnames=["df"], argvalues=normalize_transect_id)
+)
+
+
+# %% [markdown]
+# ## Extract list values from Transect ID column
+
+# %%
+# parameters
+
+join_transect_id_params = dict()
+
+# %%
+# call the task
+
+
+join_transect_id = (
+    join_list_column.set_task_instance_id("join_transect_id")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(column="transect_id", separator=",", **join_transect_id_params)
+    .mapvalues(argnames=["df"], argvalues=parse_transect_id)
 )
 
 
@@ -1618,7 +1708,7 @@ bfill_patrol_events = (
         skip_if_missing=True,
         **bfill_patrol_events_params,
     )
-    .mapvalues(argnames=["df"], argvalues=map_patrol_df)
+    .mapvalues(argnames=["df"], argvalues=join_transect_id)
 )
 
 

@@ -1064,7 +1064,7 @@ def main(params: Params):
                 "event_details__distancecountwildlife_radialangle": "radialangle",
                 "event_details__distancecountwildlife_species": "species",
                 "event_details__distancecountwildlife_totalcount": "totalcount",
-                "event_details__Transect_ID": "transect_id",
+                "event_details__Transect_ID": "transect_id_v2",
                 "event_details__Team_members": "Team Members",
                 "event_details__Number_of_observers": "num_observers",
                 "event_details__Number_of_Observers": "num_observers",
@@ -1073,6 +1073,64 @@ def main(params: Params):
             **(params_dict.get("map_patrol_df") or {}),
         )
         .mapvalues(argnames=["df"], argvalues=normalize_event_details)
+    )
+
+    normalize_transect_id = (
+        map_columns.validate()
+        .set_task_instance_id("normalize_transect_id")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            raise_if_not_found=False,
+            drop_columns=[],
+            retain_columns=[],
+            rename_columns={"transect_id_v2": "transect_id"},
+            **(params_dict.get("normalize_transect_id") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=map_patrol_df)
+    )
+
+    parse_transect_id = (
+        parse_list_column.validate()
+        .set_task_instance_id("parse_transect_id")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(column="transect_id", **(params_dict.get("parse_transect_id") or {}))
+        .mapvalues(argnames=["df"], argvalues=normalize_transect_id)
+    )
+
+    join_transect_id = (
+        join_list_column.validate()
+        .set_task_instance_id("join_transect_id")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            column="transect_id",
+            separator=",",
+            **(params_dict.get("join_transect_id") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=parse_transect_id)
     )
 
     bfill_patrol_events = (
@@ -1093,7 +1151,7 @@ def main(params: Params):
             skip_if_missing=True,
             **(params_dict.get("bfill_patrol_events") or {}),
         )
-        .mapvalues(argnames=["df"], argvalues=map_patrol_df)
+        .mapvalues(argnames=["df"], argvalues=join_transect_id)
     )
 
     ffill_patrol_events = (

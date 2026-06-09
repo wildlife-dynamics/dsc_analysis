@@ -193,7 +193,10 @@ def main(params: Params):
         "convert_tz_utc": ["time_range", "merge_patrol_events"],
         "normalize_event_details": ["convert_tz_utc"],
         "map_patrol_df": ["normalize_event_details"],
-        "bfill_patrol_events": ["map_patrol_df"],
+        "normalize_transect_id": ["map_patrol_df"],
+        "parse_transect_id": ["normalize_transect_id"],
+        "join_transect_id": ["parse_transect_id"],
+        "bfill_patrol_events": ["join_transect_id"],
         "ffill_patrol_events": ["bfill_patrol_events"],
         "filter_wildlife_rep": ["ffill_patrol_events"],
         "zip_conn_surv_name_df": ["filter_wildlife_rep", "retrieve_survey_name"],
@@ -1355,7 +1358,7 @@ def main(params: Params):
                     "event_details__distancecountwildlife_radialangle": "radialangle",
                     "event_details__distancecountwildlife_species": "species",
                     "event_details__distancecountwildlife_totalcount": "totalcount",
-                    "event_details__Transect_ID": "transect_id",
+                    "event_details__Transect_ID": "transect_id_v2",
                     "event_details__Team_members": "Team Members",
                     "event_details__Number_of_observers": "num_observers",
                     "event_details__Number_of_Observers": "num_observers",
@@ -1367,6 +1370,79 @@ def main(params: Params):
             kwargs={
                 "argnames": ["df"],
                 "argvalues": DependsOn("normalize_event_details"),
+            },
+        ),
+        "normalize_transect_id": Node(
+            async_task=map_columns.validate()
+            .set_task_instance_id("normalize_transect_id")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "raise_if_not_found": False,
+                "rename_columns": {
+                    "transect_id_v2": "transect_id",
+                },
+            }
+            | (params_dict.get("normalize_transect_id") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("map_patrol_df"),
+            },
+        ),
+        "parse_transect_id": Node(
+            async_task=parse_list_column.validate()
+            .set_task_instance_id("parse_transect_id")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "transect_id",
+            }
+            | (params_dict.get("parse_transect_id") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("normalize_transect_id"),
+            },
+        ),
+        "join_transect_id": Node(
+            async_task=join_list_column.validate()
+            .set_task_instance_id("join_transect_id")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "transect_id",
+                "separator": ",",
+            }
+            | (params_dict.get("join_transect_id") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("parse_transect_id"),
             },
         ),
         "bfill_patrol_events": Node(
@@ -1394,7 +1470,7 @@ def main(params: Params):
             method="mapvalues",
             kwargs={
                 "argnames": ["df"],
-                "argvalues": DependsOn("map_patrol_df"),
+                "argvalues": DependsOn("join_transect_id"),
             },
         ),
         "ffill_patrol_events": Node(

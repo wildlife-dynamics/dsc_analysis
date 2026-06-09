@@ -29,7 +29,7 @@ requirements:
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
   - name: ecoscope-workflows-ext-distance-sample-counts
-    version: "0.0.3.*"
+    version: "0.0.4.*"
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
 task-instance-defaults:
@@ -531,7 +531,7 @@ workflow:
         "event_details__distancecountwildlife_radialangle": "radialangle",
         "event_details__distancecountwildlife_species": "species",
         "event_details__distancecountwildlife_totalcount": "totalcount",
-        "event_details__Transect_ID": "transect_id",
+        "event_details__Transect_ID": "transect_id_v2",
         "event_details__Team_members": "Team Members",
         "event_details__Number_of_observers": "num_observers",
         "event_details__Number_of_Observers": "num_observers",
@@ -541,16 +541,48 @@ workflow:
       argnames: df
       argvalues: ${{ workflow.normalize_event_details.return }}
 
-  - name: Backward fill patrol event values within patrols 
-    id: bfill_patrol_events 
-    task: bfill_within_patrols 
-    partial:  
-      group_col: patrol_serial_number 
-      columns: ['transect_id', 'num_observers']
-      skip_if_missing: true 
-    mapvalues: 
-      argnames: df 
+  - name: Normalize transect_id column name across schemas
+    id: normalize_transect_id
+    task: map_columns
+    partial:
+      raise_if_not_found: false
+      drop_columns: []
+      retain_columns: []
+      rename_columns:
+        transect_id_v2: transect_id
+    mapvalues:
+      argnames: df
       argvalues: ${{ workflow.map_patrol_df.return }}
+
+  - name: Parse list column from Transect ID column
+    id: parse_transect_id
+    task: parse_list_column
+    partial:
+      column: "transect_id"
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.normalize_transect_id.return }}
+
+  - name: Extract list values from Transect ID column
+    id: join_transect_id
+    task: join_list_column
+    partial:
+      column: "transect_id"
+      separator: ","
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.parse_transect_id.return }}
+
+  - name: Backward fill patrol event values within patrols
+    id: bfill_patrol_events
+    task: bfill_within_patrols
+    partial:
+      group_col: patrol_serial_number
+      columns: ['transect_id', 'num_observers']
+      skip_if_missing: true
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.join_transect_id.return }}
 
   - name: Forward fill patrol event values within patrols 
     id: ffill_patrol_events 

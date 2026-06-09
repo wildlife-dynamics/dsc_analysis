@@ -157,7 +157,7 @@
         "earthranger",
         "surveys"
       ],
-      "title": "",
+      "title": "EarthRanger Configuration",
       "type": "object"
     },
     "EarthRangerConfig": {
@@ -224,7 +224,7 @@
         "time_range",
         "erSpatialTransectsGroupId"
       ],
-      "title": "",
+      "title": "Survey Configuration",
       "type": "object"
     },
     "SurveyTimeRange": {
@@ -237,6 +237,13 @@
         "until": {
           "format": "date-time",
           "title": "Until",
+          "type": "string"
+        },
+        "time_format": {
+          "default": "%d %b %Y %H:%M:%S",
+          "description": "The time format",
+          "ecoscope:advanced": true,
+          "title": "Time Format",
           "type": "string"
         }
       },
@@ -256,12 +263,30 @@
       ]
     },
     "time_range": {
+      "time_format": {
+        "ui:widget": "hidden"
+      },
       "ui:order": [
         "since",
         "until",
         "timezone",
         "time_format"
       ]
+    },
+    "connection_config": {
+      "entries": {
+        "items": {
+          "surveys": {
+            "items": {
+              "time_range": {
+                "time_format": {
+                  "ui:widget": "hidden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "ui:order": [
       "workflow_details",
