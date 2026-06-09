@@ -107,14 +107,14 @@ workflow:
   - name: Trajectory segment filter 
     id: patrol_traj 
     task: relocations_to_trajectory
-    partial: 
-      trajectory_segment_filter:
-        min_length_meters: 0.10
-        max_length_meters: 100000
-        min_time_secs: 20
-        max_time_secs: 21600
-        min_speed_kmhr: 1.5
-        max_speed_kmhr: 100
+    #partial: 
+      # trajectory_segment_filter:
+      #   min_length_meters: 0.10
+      #   max_length_meters: 100000
+      #   min_time_secs: 20
+      #   max_time_secs: 21600
+      #   min_speed_kmhr: 1.5
+      #   max_speed_kmhr: 100
     mapvalues: 
       argnames: relocations 
       argvalues: ${{ workflow.patrol_relocs.return }}

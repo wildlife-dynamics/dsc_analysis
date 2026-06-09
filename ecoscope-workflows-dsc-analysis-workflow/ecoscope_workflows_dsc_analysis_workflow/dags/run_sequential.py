@@ -312,17 +312,7 @@ def main(params: Params):
             ],
             unpack_depth=1,
         )
-        .partial(
-            trajectory_segment_filter={
-                "min_length_meters": 0.1,
-                "max_length_meters": 100000,
-                "min_time_secs": 20,
-                "max_time_secs": 21600,
-                "min_speed_kmhr": 1.5,
-                "max_speed_kmhr": 100,
-            },
-            **(params_dict.get("patrol_traj") or {}),
-        )
+        .partial(**(params_dict.get("patrol_traj") or {}))
         .mapvalues(argnames=["relocations"], argvalues=patrol_relocs)
     )
 

@@ -416,7 +416,9 @@ patrol_relocs = (
 # %%
 # parameters
 
-patrol_traj_params = dict()
+patrol_traj_params = dict(
+    trajectory_segment_filter=...,
+)
 
 # %%
 # call the task
@@ -433,17 +435,7 @@ patrol_traj = (
         ],
         unpack_depth=1,
     )
-    .partial(
-        trajectory_segment_filter={
-            "min_length_meters": 0.1,
-            "max_length_meters": 100000,
-            "min_time_secs": 20,
-            "max_time_secs": 21600,
-            "min_speed_kmhr": 1.5,
-            "max_speed_kmhr": 100,
-        },
-        **patrol_traj_params,
-    )
+    .partial(**patrol_traj_params)
     .mapvalues(argnames=["relocations"], argvalues=patrol_relocs)
 )
 
