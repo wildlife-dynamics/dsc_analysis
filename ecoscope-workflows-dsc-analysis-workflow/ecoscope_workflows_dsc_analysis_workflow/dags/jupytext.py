@@ -68,6 +68,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     combine_names as combine_names,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    compute_field_effort as compute_field_effort,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     convert_column_timezone as convert_column_timezone,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -87,9 +90,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     fetch_patrol_events as fetch_patrol_events,
-)
-from ecoscope_workflows_ext_distance_sample_counts.tasks import (
-    fetch_patrols_from_id as fetch_patrols_from_id,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     fetch_transects as fetch_transects,
@@ -138,13 +138,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     to_ee_feature_collection as to_ee_feature_collection,
-)
-from ecoscope_workflows_ext_ecoscope.tasks.analysis import summarize_df as summarize_df
-from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
-    process_relocations as process_relocations,
-)
-from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
-    relocations_to_trajectory as relocations_to_trajectory,
 )
 from ecoscope_workflows_ext_ecoscope.tasks.transformation import (
     normalize_json_column as normalize_json_column,
@@ -275,7 +268,7 @@ gee_client = (
 
 
 # %% [markdown]
-# ## Configure EarthRanger connection
+# ## Configure EarthRanger and Survey
 
 # %%
 # parameters
@@ -329,114 +322,6 @@ split_connection_config = (
     )
     .partial(connection_configs=connection_config, **split_connection_config_params)
     .call()
-)
-
-
-# %% [markdown]
-# ## Fetch patrols from patrol ids
-
-# %%
-# parameters
-
-fetch_patrols_from_ids_params = dict()
-
-# %%
-# call the task
-
-
-fetch_patrols_from_ids = (
-    fetch_patrols_from_id.set_task_instance_id("fetch_patrols_from_ids")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(**fetch_patrols_from_ids_params)
-    .mapvalues(argnames=["connection_survey"], argvalues=split_connection_config)
-)
-
-
-# %% [markdown]
-# ## Convert patrols to relocs
-
-# %%
-# parameters
-
-patrol_relocs_params = dict()
-
-# %%
-# call the task
-
-
-patrol_relocs = (
-    process_relocations.set_task_instance_id("patrol_relocs")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(
-        relocs_columns=[
-            "patrol_id",
-            "patrol_start_time",
-            "patrol_end_time",
-            "patrol_type__value",
-            "patrol_type__display",
-            "patrol_serial_number",
-            "patrol_status",
-            "patrol_subject",
-            "groupby_col",
-            "fixtime",
-            "junk_status",
-            "extra__source",
-            "geometry",
-        ],
-        filter_point_coords=[
-            {"x": 180.0, "y": 90.0},
-            {"x": 0.0, "y": 0.0},
-            {"x": 1.0, "y": 1.0},
-        ],
-        **patrol_relocs_params,
-    )
-    .mapvalues(argnames=["observations"], argvalues=fetch_patrols_from_ids)
-)
-
-
-# %% [markdown]
-# ## Trajectory segment filter
-
-# %%
-# parameters
-
-patrol_traj_params = dict(
-    trajectory_segment_filter=...,
-)
-
-# %%
-# call the task
-
-
-patrol_traj = (
-    relocations_to_trajectory.set_task_instance_id("patrol_traj")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(**patrol_traj_params)
-    .mapvalues(argnames=["relocations"], argvalues=patrol_relocs)
 )
 
 
@@ -1097,47 +982,19 @@ persist_survey_event_metadata = (
 
 
 # %% [markdown]
-# ## Combine survey name with patrol trajectories for filename
+# ## Zip connection survey split information with metadata csv
 
 # %%
 # parameters
 
-combine_survey_traj_name_params = dict()
+zip_connection_metadata_params = dict()
 
 # %%
 # call the task
 
 
-combine_survey_traj_name = (
-    combine_names.set_task_instance_id("combine_survey_traj_name")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(b="_patrol_trajectories", **combine_survey_traj_name_params)
-    .mapvalues(argnames=["a"], argvalues=retrieve_survey_name)
-)
-
-
-# %% [markdown]
-# ## Zip filename with patrol trajectories
-
-# %%
-# parameters
-
-zip_filename_traj_params = dict()
-
-# %%
-# call the task
-
-
-zip_filename_traj = (
-    zip_groupbykey.set_task_instance_id("zip_filename_traj")
+zip_connection_metadata = (
+    zip_groupbykey.set_task_instance_id("zip_connection_metadata")
     .handle_errors()
     .with_tracing()
     .skipif(
@@ -1148,26 +1005,27 @@ zip_filename_traj = (
         unpack_depth=1,
     )
     .partial(
-        sequences=[combine_survey_traj_name, patrol_traj], **zip_filename_traj_params
+        sequences=[split_connection_config, drop_null_cols],
+        **zip_connection_metadata_params,
     )
     .call()
 )
 
 
 # %% [markdown]
-# ## Persist patrol trajectories with dynamic filename
+# ## Compute field effort
 
 # %%
 # parameters
 
-persist_patrol_traj_params = dict()
+field_effort_params = dict()
 
 # %%
 # call the task
 
 
-persist_patrol_traj = (
-    persist_df_wrapper.set_task_instance_id("persist_patrol_traj")
+field_effort = (
+    compute_field_effort.set_task_instance_id("field_effort")
     .handle_errors()
     .with_tracing()
     .skipif(
@@ -1177,31 +1035,25 @@ persist_patrol_traj = (
         ],
         unpack_depth=1,
     )
-    .partial(
-        root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-        filetypes=["gpkg"],
-        filename=None,
-        sanitize=False,
-        **persist_patrol_traj_params,
-    )
-    .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_traj)
+    .partial(**field_effort_params)
+    .mapvalues(argnames=["connection_survey", "df"], argvalues=zip_connection_metadata)
 )
 
 
 # %% [markdown]
-# ## Rename patrol trajectory columns
+# ## Combine survey name with field effort
 
 # %%
 # parameters
 
-rename_patrol_traj_cols_params = dict()
+combine_survey_field_params = dict()
 
 # %%
 # call the task
 
 
-rename_patrol_traj_cols = (
-    map_columns.set_task_instance_id("rename_patrol_traj_cols")
+combine_survey_field = (
+    combine_names.set_task_instance_id("combine_survey_field")
     .handle_errors()
     .with_tracing()
     .skipif(
@@ -1211,118 +1063,25 @@ rename_patrol_traj_cols = (
         ],
         unpack_depth=1,
     )
-    .partial(
-        raise_if_not_found=False,
-        drop_columns=[],
-        retain_columns=[],
-        rename_columns={
-            "extra__patrol_type__value": "patrol_type",
-            "extra__patrol_serial_number": "patrol_serial_number",
-            "extra__patrol_status": "patrol_status",
-            "extra__patrol_subject": "patrol_subject",
-            "extra__patrol_id": "patrol_id",
-        },
-        **rename_patrol_traj_cols_params,
-    )
-    .mapvalues(argnames=["df"], argvalues=patrol_traj)
-)
-
-
-# %% [markdown]
-# ## Summarize patrol information
-
-# %%
-# parameters
-
-summarize_dsc_patrol_params = dict()
-
-# %%
-# call the task
-
-
-summarize_dsc_patrol = (
-    summarize_df.set_task_instance_id("summarize_dsc_patrol")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(
-        groupby_cols=["patrol_subject"],
-        reset_index=True,
-        summary_params=[
-            {
-                "display_name": "no_of_patrols",
-                "aggregator": "nunique",
-                "column": "patrol_id",
-            },
-            {
-                "display_name": "total_distance_km",
-                "aggregator": "sum",
-                "column": "dist_meters",
-                "original_unit": "m",
-                "new_unit": "km",
-            },
-            {
-                "display_name": "total_time",
-                "aggregator": "sum",
-                "column": "timespan_seconds",
-                "original_unit": "s",
-                "new_unit": "h",
-            },
-        ],
-        **summarize_dsc_patrol_params,
-    )
-    .mapvalues(argnames=["df"], argvalues=rename_patrol_traj_cols)
-)
-
-
-# %% [markdown]
-# ## Combine survey name with patrol summary for filename
-
-# %%
-# parameters
-
-combine_survey_summary_name_params = dict()
-
-# %%
-# call the task
-
-
-combine_survey_summary_name = (
-    combine_names.set_task_instance_id("combine_survey_summary_name")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(b="_patrol_summary", **combine_survey_summary_name_params)
+    .partial(b="_field_effort", **combine_survey_field_params)
     .mapvalues(argnames=["a"], argvalues=retrieve_survey_name)
 )
 
 
 # %% [markdown]
-# ## Zip filename with patrol summary
+# ## Zip filename with field effort
 
 # %%
 # parameters
 
-zip_filename_summary_params = dict()
+zip_filename_fe_params = dict()
 
 # %%
 # call the task
 
 
-zip_filename_summary = (
-    zip_groupbykey.set_task_instance_id("zip_filename_summary")
+zip_filename_fe = (
+    zip_groupbykey.set_task_instance_id("zip_filename_fe")
     .handle_errors()
     .with_tracing()
     .skipif(
@@ -1332,28 +1091,25 @@ zip_filename_summary = (
         ],
         unpack_depth=1,
     )
-    .partial(
-        sequences=[combine_survey_summary_name, summarize_dsc_patrol],
-        **zip_filename_summary_params,
-    )
+    .partial(sequences=[combine_survey_field, field_effort], **zip_filename_fe_params)
     .call()
 )
 
 
 # %% [markdown]
-# ## Persist patrol summary with dynamic filename
+# ## Persist field effort with dynamic filename
 
 # %%
 # parameters
 
-persist_patrol_summary_params = dict()
+persist_field_effort_params = dict()
 
 # %%
 # call the task
 
 
-persist_patrol_summary = (
-    persist_df_wrapper.set_task_instance_id("persist_patrol_summary")
+persist_field_effort = (
+    persist_df_wrapper.set_task_instance_id("persist_field_effort")
     .handle_errors()
     .with_tracing()
     .skipif(
@@ -1368,9 +1124,9 @@ persist_patrol_summary = (
         filetypes=["csv"],
         filename=None,
         sanitize=False,
-        **persist_patrol_summary_params,
+        **persist_field_effort_params,
     )
-    .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_summary)
+    .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_fe)
 )
 
 

@@ -58,6 +58,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     combine_names as combine_names,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    compute_field_effort as compute_field_effort,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     convert_column_timezone as convert_column_timezone,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -77,9 +80,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     fetch_patrol_events as fetch_patrol_events,
-)
-from ecoscope_workflows_ext_distance_sample_counts.tasks import (
-    fetch_patrols_from_id as fetch_patrols_from_id,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     fetch_transects as fetch_transects,
@@ -128,13 +128,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     to_ee_feature_collection as to_ee_feature_collection,
-)
-from ecoscope_workflows_ext_ecoscope.tasks.analysis import summarize_df as summarize_df
-from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
-    process_relocations as process_relocations,
-)
-from ecoscope_workflows_ext_ecoscope.tasks.preprocessing import (
-    relocations_to_trajectory as relocations_to_trajectory,
 )
 from ecoscope_workflows_ext_ecoscope.tasks.transformation import (
     normalize_json_column as normalize_json_column,
@@ -244,76 +237,6 @@ def main(params: Params):
             **(params_dict.get("split_connection_config") or {}),
         )
         .call()
-    )
-
-    fetch_patrols_from_ids = (
-        fetch_patrols_from_id.validate()
-        .set_task_instance_id("fetch_patrols_from_ids")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(**(params_dict.get("fetch_patrols_from_ids") or {}))
-        .mapvalues(argnames=["connection_survey"], argvalues=split_connection_config)
-    )
-
-    patrol_relocs = (
-        process_relocations.validate()
-        .set_task_instance_id("patrol_relocs")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            relocs_columns=[
-                "patrol_id",
-                "patrol_start_time",
-                "patrol_end_time",
-                "patrol_type__value",
-                "patrol_type__display",
-                "patrol_serial_number",
-                "patrol_status",
-                "patrol_subject",
-                "groupby_col",
-                "fixtime",
-                "junk_status",
-                "extra__source",
-                "geometry",
-            ],
-            filter_point_coords=[
-                {"x": 180.0, "y": 90.0},
-                {"x": 0.0, "y": 0.0},
-                {"x": 1.0, "y": 1.0},
-            ],
-            **(params_dict.get("patrol_relocs") or {}),
-        )
-        .mapvalues(argnames=["observations"], argvalues=fetch_patrols_from_ids)
-    )
-
-    patrol_traj = (
-        relocations_to_trajectory.validate()
-        .set_task_instance_id("patrol_traj")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(**(params_dict.get("patrol_traj") or {}))
-        .mapvalues(argnames=["relocations"], argvalues=patrol_relocs)
     )
 
     retrieve_patrol_events = (
@@ -735,28 +658,9 @@ def main(params: Params):
         .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_survey_df)
     )
 
-    combine_survey_traj_name = (
-        combine_names.validate()
-        .set_task_instance_id("combine_survey_traj_name")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            b="_patrol_trajectories",
-            **(params_dict.get("combine_survey_traj_name") or {}),
-        )
-        .mapvalues(argnames=["a"], argvalues=retrieve_survey_name)
-    )
-
-    zip_filename_traj = (
+    zip_connection_metadata = (
         zip_groupbykey.validate()
-        .set_task_instance_id("zip_filename_traj")
+        .set_task_instance_id("zip_connection_metadata")
         .handle_errors()
         .with_tracing()
         .skipif(
@@ -767,15 +671,15 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[combine_survey_traj_name, patrol_traj],
-            **(params_dict.get("zip_filename_traj") or {}),
+            sequences=[split_connection_config, drop_null_cols],
+            **(params_dict.get("zip_connection_metadata") or {}),
         )
         .call()
     )
 
-    persist_patrol_traj = (
-        persist_df_wrapper.validate()
-        .set_task_instance_id("persist_patrol_traj")
+    field_effort = (
+        compute_field_effort.validate()
+        .set_task_instance_id("field_effort")
         .handle_errors()
         .with_tracing()
         .skipif(
@@ -785,88 +689,15 @@ def main(params: Params):
             ],
             unpack_depth=1,
         )
-        .partial(
-            root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-            filetypes=["gpkg"],
-            filename=None,
-            sanitize=False,
-            **(params_dict.get("persist_patrol_traj") or {}),
+        .partial(**(params_dict.get("field_effort") or {}))
+        .mapvalues(
+            argnames=["connection_survey", "df"], argvalues=zip_connection_metadata
         )
-        .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_traj)
     )
 
-    rename_patrol_traj_cols = (
-        map_columns.validate()
-        .set_task_instance_id("rename_patrol_traj_cols")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            raise_if_not_found=False,
-            drop_columns=[],
-            retain_columns=[],
-            rename_columns={
-                "extra__patrol_type__value": "patrol_type",
-                "extra__patrol_serial_number": "patrol_serial_number",
-                "extra__patrol_status": "patrol_status",
-                "extra__patrol_subject": "patrol_subject",
-                "extra__patrol_id": "patrol_id",
-            },
-            **(params_dict.get("rename_patrol_traj_cols") or {}),
-        )
-        .mapvalues(argnames=["df"], argvalues=patrol_traj)
-    )
-
-    summarize_dsc_patrol = (
-        summarize_df.validate()
-        .set_task_instance_id("summarize_dsc_patrol")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            groupby_cols=["patrol_subject"],
-            reset_index=True,
-            summary_params=[
-                {
-                    "display_name": "no_of_patrols",
-                    "aggregator": "nunique",
-                    "column": "patrol_id",
-                },
-                {
-                    "display_name": "total_distance_km",
-                    "aggregator": "sum",
-                    "column": "dist_meters",
-                    "original_unit": "m",
-                    "new_unit": "km",
-                },
-                {
-                    "display_name": "total_time",
-                    "aggregator": "sum",
-                    "column": "timespan_seconds",
-                    "original_unit": "s",
-                    "new_unit": "h",
-                },
-            ],
-            **(params_dict.get("summarize_dsc_patrol") or {}),
-        )
-        .mapvalues(argnames=["df"], argvalues=rename_patrol_traj_cols)
-    )
-
-    combine_survey_summary_name = (
+    combine_survey_field = (
         combine_names.validate()
-        .set_task_instance_id("combine_survey_summary_name")
+        .set_task_instance_id("combine_survey_field")
         .handle_errors()
         .with_tracing()
         .skipif(
@@ -876,16 +707,13 @@ def main(params: Params):
             ],
             unpack_depth=1,
         )
-        .partial(
-            b="_patrol_summary",
-            **(params_dict.get("combine_survey_summary_name") or {}),
-        )
+        .partial(b="_field_effort", **(params_dict.get("combine_survey_field") or {}))
         .mapvalues(argnames=["a"], argvalues=retrieve_survey_name)
     )
 
-    zip_filename_summary = (
+    zip_filename_fe = (
         zip_groupbykey.validate()
-        .set_task_instance_id("zip_filename_summary")
+        .set_task_instance_id("zip_filename_fe")
         .handle_errors()
         .with_tracing()
         .skipif(
@@ -896,15 +724,15 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[combine_survey_summary_name, summarize_dsc_patrol],
-            **(params_dict.get("zip_filename_summary") or {}),
+            sequences=[combine_survey_field, field_effort],
+            **(params_dict.get("zip_filename_fe") or {}),
         )
         .call()
     )
 
-    persist_patrol_summary = (
+    persist_field_effort = (
         persist_df_wrapper.validate()
-        .set_task_instance_id("persist_patrol_summary")
+        .set_task_instance_id("persist_field_effort")
         .handle_errors()
         .with_tracing()
         .skipif(
@@ -919,9 +747,9 @@ def main(params: Params):
             filetypes=["csv"],
             filename=None,
             sanitize=False,
-            **(params_dict.get("persist_patrol_summary") or {}),
+            **(params_dict.get("persist_field_effort") or {}),
         )
-        .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_summary)
+        .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_fe)
     )
 
     select_event_details = (

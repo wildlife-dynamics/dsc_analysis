@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, confloat
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkflowDetails(BaseModel):
@@ -37,33 +37,17 @@ class SurveyTimeRange(BaseModel):
     until: datetime = Field(..., title="Until")
     timezone: Optional[TimezoneInfo] = Field(
         default_factory=lambda: TimezoneInfo.model_validate(
-            {"label": "UTC", "tzCode": "UTC", "name": "UTC", "utc": "+00:00"}
+            {
+                "label": "East Africa Time",
+                "tzCode": "Africa/Nairobi",
+                "name": "Africa/Nairobi (EAT)",
+                "utc": "+03:00",
+            }
         ),
         title="Timezone",
     )
     time_format: Optional[str] = Field(
         "%d %b %Y %H:%M:%S", description="The time format", title="Time Format"
-    )
-
-
-class TrajectorySegmentFilter(BaseModel):
-    min_length_meters: Optional[confloat(ge=0.001)] = Field(
-        0.001, title="Minimum Segment Length (Meters)"
-    )
-    max_length_meters: Optional[confloat(gt=0.001)] = Field(
-        100000, title="Maximum Segment Length (Meters)"
-    )
-    min_time_secs: Optional[confloat(ge=1.0)] = Field(
-        1, title="Minimum Segment Duration (Seconds)"
-    )
-    max_time_secs: Optional[confloat(gt=1.0)] = Field(
-        172800, title="Maximum Segment Duration (Seconds)"
-    )
-    min_speed_kmhr: Optional[confloat(gt=0.001)] = Field(
-        0.01, title="Minimum Segment Speed (Kilometers per Hour)"
-    )
-    max_speed_kmhr: Optional[confloat(gt=0.001)] = Field(
-        500, title="Maximum Segment Speed (Kilometers per Hour)"
     )
 
 
@@ -85,26 +69,6 @@ class GeeClient(BaseModel):
     )
     data_source: GoogleEarthEngineConnection = Field(
         ..., description="Select one of your configured data sources.", title=""
-    )
-
-
-class PatrolTraj(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    trajectory_segment_filter: Optional[TrajectorySegmentFilter] = Field(
-        default_factory=lambda: TrajectorySegmentFilter.model_validate(
-            {
-                "min_length_meters": 0.001,
-                "max_length_meters": 100000,
-                "min_time_secs": 1,
-                "max_time_secs": 172800,
-                "min_speed_kmhr": 0.01,
-                "max_speed_kmhr": 500,
-            }
-        ),
-        description="Filter track data by setting limits on track segment length, duration, and speed. Segments outside these bounds are removed, reducing noise and to focus on meaningful movement patterns.",
-        title=" ",
     )
 
 
@@ -146,7 +110,7 @@ class ConnectionConfig(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    entries: List[ConnectionConfigEntry] = Field(..., title="Entries")
+    entries: List[ConnectionConfigEntry] = Field(..., title="")
 
 
 class FormData(BaseModel):
@@ -165,6 +129,5 @@ class FormData(BaseModel):
         None, title="Configure Google Earth Engine connection"
     )
     connection_config: Optional[ConnectionConfig] = Field(
-        None, title="Configure EarthRanger connection"
+        None, title="Configure EarthRanger and Survey"
     )
-    patrol_traj: Optional[PatrolTraj] = Field(None, title="Trajectory segment filter")
