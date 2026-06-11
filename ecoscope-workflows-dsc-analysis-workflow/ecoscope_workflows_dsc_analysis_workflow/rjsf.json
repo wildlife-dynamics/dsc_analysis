@@ -82,7 +82,7 @@
           "items": {
             "$ref": "#/$defs/ConnectionConfigEntry"
           },
-          "title": "",
+          "title": "ER",
           "type": "array"
         }
       },
@@ -90,7 +90,7 @@
         "entries"
       ],
       "type": "object",
-      "title": "Configure EarthRanger and Survey"
+      "title": "Configure EarthRanger and Survey Details"
     }
   },
   "$defs": {

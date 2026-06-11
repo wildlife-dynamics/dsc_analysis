@@ -110,7 +110,7 @@ class ConnectionConfig(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    entries: List[ConnectionConfigEntry] = Field(..., title="")
+    entries: List[ConnectionConfigEntry] = Field(..., title="ER")
 
 
 class FormData(BaseModel):
@@ -129,5 +129,5 @@ class FormData(BaseModel):
         None, title="Configure Google Earth Engine connection"
     )
     connection_config: Optional[ConnectionConfig] = Field(
-        None, title="Configure EarthRanger and Survey"
+        None, title="Configure EarthRanger and Survey Details"
     )

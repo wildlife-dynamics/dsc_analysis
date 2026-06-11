@@ -43,7 +43,7 @@ rjsf-overrides:
     ConnectionConfigEntry.properties.surveys.title: "Surveys"
     SurveyConfig.title: "Configure Survey"
   properties:
-    connection_config.properties.entries.title: ""
+    connection_config.properties.entries.title: "ER"
   uiSchema:
     connection_config.entries.items.surveys.items.time_range.timezone:
       ui:widget: hidden
@@ -75,7 +75,7 @@ workflow:
     id: gee_client 
     task: set_gee_connection
 
-  - name: Configure EarthRanger and Survey
+  - name: Configure EarthRanger and Survey Details
     id: connection_config
     task: create_connection_configs
 

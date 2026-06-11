@@ -268,7 +268,7 @@ gee_client = (
 
 
 # %% [markdown]
-# ## Configure EarthRanger and Survey
+# ## Configure EarthRanger and Survey Details
 
 # %%
 # parameters

@@ -124,5 +124,5 @@ class Params(BaseModel):
         None, title="Configure Google Earth Engine connection"
     )
     connection_config: Optional[ConnectionConfig] = Field(
-        None, title="Configure EarthRanger and Survey"
+        None, title="Configure EarthRanger and Survey Details"
     )
