@@ -34,6 +34,11 @@ requirements:
 
 rjsf-overrides:
   $defs:
+    TimeRange.properties.timezone.default:
+      label: "East Africa Time"
+      tzCode: "Africa/Nairobi"
+      name: "Africa/Nairobi (EAT)"
+      utc: "+03:00"
     SurveyTimeRange.properties.timezone.default:
       label: "East Africa Time"
       tzCode: "Africa/Nairobi"
@@ -44,11 +49,11 @@ rjsf-overrides:
     SurveyConfig.title: "Configure Survey"
   properties:
     connection_config.properties.entries.title: "ER"
-  uiSchema:
-    connection_config.entries.items.surveys.items.time_range.timezone:
-      ui:widget: hidden
-    connection_config.entries.items.surveys.items.time_range.time_format:
-      ui:widget: hidden
+  # uiSchema:
+  #   connection_config.entries.items.surveys.items.time_range.timezone:
+  #     ui:widget: hidden
+  #   connection_config.entries.items.surveys.items.time_range.time_format:
+  #     ui:widget: hidden
 
 task-instance-defaults:
   skipif:

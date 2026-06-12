@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,6 +49,15 @@ class SurveyTimeRange(BaseModel):
     time_format: Optional[str] = Field(
         "%d %b %Y %H:%M:%S", description="The time format", title="Time Format"
     )
+
+
+class TimeRange1(BaseModel):
+    timezone: Optional[Any] = {
+        "label": "East Africa Time",
+        "tzCode": "Africa/Nairobi",
+        "name": "Africa/Nairobi (EAT)",
+        "utc": "+03:00",
+    }
 
 
 class TimeRange(BaseModel):
