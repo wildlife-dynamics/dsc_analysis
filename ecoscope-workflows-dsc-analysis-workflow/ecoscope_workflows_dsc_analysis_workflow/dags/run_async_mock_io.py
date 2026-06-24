@@ -78,7 +78,13 @@ from ecoscope_workflows_ext_custom.tasks.spatial_ops import (
     reproject_gdf as reproject_gdf,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
+    format_text_column as format_text_column,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
     merge_two_dataframes as merge_two_dataframes,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
+    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
     select_columns as select_columns,
@@ -123,6 +129,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     estimate_utm_crs as estimate_utm_crs,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    extract_notes_text as extract_notes_text,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     ffill_within_patrols as ffill_within_patrols,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -142,9 +151,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     merge_transect_lines as merge_transect_lines,
-)
-from ecoscope_workflows_ext_distance_sample_counts.tasks import (
-    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     simplify_transects as simplify_transects,
@@ -206,7 +212,8 @@ def main(params: Params):
         "bfill_patrol_events": ["join_transect_id"],
         "ffill_patrol_events": ["bfill_patrol_events"],
         "filter_wildlife_rep": ["ffill_patrol_events"],
-        "zip_conn_surv_name_df": ["filter_wildlife_rep", "retrieve_survey_name"],
+        "extract_notes": ["filter_wildlife_rep"],
+        "zip_conn_surv_name_df": ["extract_notes", "retrieve_survey_name"],
         "add_survey_column": ["zip_conn_surv_name_df"],
         "convert_transects_utm": ["fetch_patrol_transects"],
         "zip_transect_df_crs": ["convert_transects_utm", "fetch_patrol_transects"],
@@ -250,6 +257,7 @@ def main(params: Params):
         "exclude_geom": ["filter_transect_columns"],
         "zip_patrol_transects_df": ["filter_intersecting_events", "exclude_geom"],
         "merge_filtered_patrols": ["zip_patrol_transects_df"],
+        "persist_transect_pats": ["merge_filtered_patrols"],
         "select_patrol_event_cols": ["merge_filtered_patrols"],
         "combine_patrol_event_names": ["retrieve_survey_name"],
         "zip_filename_patrol_df": [
@@ -261,10 +269,11 @@ def main(params: Params):
         "combine_gpkg_name": ["retrieve_survey_name"],
         "zip_filename_gpkg_df": ["combine_gpkg_name", "select_gpkg_columns"],
         "persist_patrol_events_gpkg": ["zip_filename_gpkg_df"],
+        "format_transect_names": ["filter_transect_columns"],
         "combine_transect_gpkg_name": ["retrieve_survey_name"],
         "zip_filename_transect_df": [
             "combine_transect_gpkg_name",
-            "filter_transect_columns",
+            "format_transect_names",
         ],
         "persist_transects_gpkg": ["zip_filename_transect_df"],
         "combine_orig_transect_gpkg_name": ["retrieve_survey_name"],
@@ -1020,6 +1029,7 @@ def main(params: Params):
             partial={
                 "columns": [
                     "event_details",
+                    "notes",
                 ],
                 "raise_on_missing": False,
             }
@@ -1161,6 +1171,11 @@ def main(params: Params):
                     "event_details__Number_of_observers": "num_observers",
                     "event_details__Number_of_Observers": "num_observers",
                     "event_details__Number of Observers": "num_observers",
+                    "event_details__Species": "species",
+                    "event_details__Total Count": "totalcount",
+                    "event_details__Number of Juveniles": "num_juveniles",
+                    "event_details__Radial Angle": "radialangle",
+                    "event_details__Distance to Centre (m)": "dist_to_centre",
                 },
             }
             | (params_dict.get("map_patrol_df") or {}),
@@ -1325,6 +1340,30 @@ def main(params: Params):
                 "argvalues": DependsOn("ffill_patrol_events"),
             },
         ),
+        "extract_notes": Node(
+            async_task=extract_notes_text.validate()
+            .set_task_instance_id("extract_notes")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "notes",
+                "new_column": "other_species",
+            }
+            | (params_dict.get("extract_notes") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("filter_wildlife_rep"),
+            },
+        ),
         "zip_conn_surv_name_df": Node(
             async_task=zip_groupbykey.validate()
             .set_task_instance_id("zip_conn_surv_name_df")
@@ -1340,7 +1379,7 @@ def main(params: Params):
             .set_executor("lithops"),
             partial={
                 "sequences": [
-                    DependsOn("filter_wildlife_rep"),
+                    DependsOn("extract_notes"),
                     DependsOn("retrieve_survey_name"),
                 ],
             }
@@ -2219,6 +2258,35 @@ def main(params: Params):
                 "argvalues": DependsOn("zip_patrol_transects_df"),
             },
         ),
+        "persist_transect_pats": Node(
+            async_task=persist_df_wrapper.validate()
+            .set_task_instance_id("persist_transect_pats")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "root_path": os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
+                "filetypes": [
+                    "csv",
+                ],
+                "filename": None,
+                "sanitize": False,
+                "filename_prefix": "transect_patrols",
+            }
+            | (params_dict.get("persist_transect_pats") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("merge_filtered_patrols"),
+            },
+        ),
         "select_patrol_event_cols": Node(
             async_task=select_columns.validate()
             .set_task_instance_id("select_patrol_event_cols")
@@ -2246,6 +2314,7 @@ def main(params: Params):
                     "dist_to_centre",
                     "geometry",
                     "species",
+                    "other_species",
                     "time",
                     "serial_number",
                     "radialangle",
@@ -2444,6 +2513,30 @@ def main(params: Params):
                 "argvalues": DependsOn("zip_filename_gpkg_df"),
             },
         ),
+        "format_transect_names": Node(
+            async_task=format_text_column.validate()
+            .set_task_instance_id("format_transect_names")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "name",
+                "method": "lower",
+            }
+            | (params_dict.get("format_transect_names") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("filter_transect_columns"),
+            },
+        ),
         "combine_transect_gpkg_name": Node(
             async_task=combine_names.validate()
             .set_task_instance_id("combine_transect_gpkg_name")
@@ -2483,7 +2576,7 @@ def main(params: Params):
             partial={
                 "sequences": [
                     DependsOn("combine_transect_gpkg_name"),
-                    DependsOn("filter_transect_columns"),
+                    DependsOn("format_transect_names"),
                 ],
             }
             | (params_dict.get("zip_filename_transect_df") or {}),

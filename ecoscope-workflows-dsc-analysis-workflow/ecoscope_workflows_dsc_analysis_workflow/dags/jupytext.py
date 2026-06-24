@@ -38,7 +38,13 @@ from ecoscope_workflows_ext_custom.tasks.transformation import (
     filter_row_values as filter_row_values,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
+    format_text_column as format_text_column,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
     merge_two_dataframes as merge_two_dataframes,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
+    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
     select_columns as select_columns,
@@ -86,6 +92,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     estimate_utm_crs as estimate_utm_crs,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    extract_notes_text as extract_notes_text,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     fetch_events as fetch_events,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -123,9 +132,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     parse_df_point as parse_df_point,
-)
-from ecoscope_workflows_ext_distance_sample_counts.tasks import (
-    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     set_dataframe_index as set_dataframe_index,
@@ -1154,7 +1160,9 @@ select_event_details = (
         unpack_depth=1,
     )
     .partial(
-        columns=["event_details"], raise_on_missing=False, **select_event_details_params
+        columns=["event_details", "notes"],
+        raise_on_missing=False,
+        **select_event_details_params,
     )
     .mapvalues(argnames=["df"], argvalues=fetch_events_from_ids)
 )
@@ -1330,6 +1338,11 @@ map_patrol_df = (
             "event_details__Number_of_observers": "num_observers",
             "event_details__Number_of_Observers": "num_observers",
             "event_details__Number of Observers": "num_observers",
+            "event_details__Species": "species",
+            "event_details__Total Count": "totalcount",
+            "event_details__Number of Juveniles": "num_juveniles",
+            "event_details__Radial Angle": "radialangle",
+            "event_details__Distance to Centre (m)": "dist_to_centre",
         },
         **map_patrol_df_params,
     )
@@ -1526,6 +1539,34 @@ filter_wildlife_rep = (
 
 
 # %% [markdown]
+# ## Extract other species from other notes
+
+# %%
+# parameters
+
+extract_notes_params = dict()
+
+# %%
+# call the task
+
+
+extract_notes = (
+    extract_notes_text.set_task_instance_id("extract_notes")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(column="notes", new_column="other_species", **extract_notes_params)
+    .mapvalues(argnames=["df"], argvalues=filter_wildlife_rep)
+)
+
+
+# %% [markdown]
 # ## Zip connection survey name with patrol events
 
 # %%
@@ -1549,8 +1590,7 @@ zip_conn_surv_name_df = (
         unpack_depth=1,
     )
     .partial(
-        sequences=[filter_wildlife_rep, retrieve_survey_name],
-        **zip_conn_surv_name_df_params,
+        sequences=[extract_notes, retrieve_survey_name], **zip_conn_surv_name_df_params
     )
     .call()
 )
@@ -2706,6 +2746,41 @@ merge_filtered_patrols = (
 
 
 # %% [markdown]
+# ## Persist transect patrols
+
+# %%
+# parameters
+
+persist_transect_pats_params = dict()
+
+# %%
+# call the task
+
+
+persist_transect_pats = (
+    persist_df_wrapper.set_task_instance_id("persist_transect_pats")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(
+        root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
+        filetypes=["csv"],
+        filename=None,
+        sanitize=False,
+        filename_prefix="transect_patrols",
+        **persist_transect_pats_params,
+    )
+    .mapvalues(argnames=["df"], argvalues=merge_filtered_patrols)
+)
+
+
+# %% [markdown]
 # ## Select patrol event columns for export
 
 # %%
@@ -2742,6 +2817,7 @@ select_patrol_event_cols = (
             "dist_to_centre",
             "geometry",
             "species",
+            "other_species",
             "time",
             "serial_number",
             "radialangle",
@@ -2987,6 +3063,34 @@ persist_patrol_events_gpkg = (
 
 
 # %% [markdown]
+# ## Convert all name values in transects to lowercase
+
+# %%
+# parameters
+
+format_transect_names_params = dict()
+
+# %%
+# call the task
+
+
+format_transect_names = (
+    format_text_column.set_task_instance_id("format_transect_names")
+    .handle_errors()
+    .with_tracing()
+    .skipif(
+        conditions=[
+            any_is_empty_df,
+            any_dependency_skipped,
+        ],
+        unpack_depth=1,
+    )
+    .partial(column="name", method="lower", **format_transect_names_params)
+    .mapvalues(argnames=["df"], argvalues=filter_transect_columns)
+)
+
+
+# %% [markdown]
 # ## Combine survey name with transects for gpkg filename
 
 # %%
@@ -3038,7 +3142,7 @@ zip_filename_transect_df = (
         unpack_depth=1,
     )
     .partial(
-        sequences=[combine_transect_gpkg_name, filter_transect_columns],
+        sequences=[combine_transect_gpkg_name, format_transect_names],
         **zip_filename_transect_df_params,
     )
     .call()

@@ -77,7 +77,13 @@ from ecoscope_workflows_ext_custom.tasks.spatial_ops import (
     reproject_gdf as reproject_gdf,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
+    format_text_column as format_text_column,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
     merge_two_dataframes as merge_two_dataframes,
+)
+from ecoscope_workflows_ext_custom.tasks.transformation import (
+    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_custom.tasks.transformation import (
     select_columns as select_columns,
@@ -122,6 +128,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     estimate_utm_crs as estimate_utm_crs,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    extract_notes_text as extract_notes_text,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     ffill_within_patrols as ffill_within_patrols,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -141,9 +150,6 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     merge_transect_lines as merge_transect_lines,
-)
-from ecoscope_workflows_ext_distance_sample_counts.tasks import (
-    parse_list_column as parse_list_column,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     simplify_transects as simplify_transects,
@@ -785,7 +791,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            columns=["event_details"],
+            columns=["event_details", "notes"],
             raise_on_missing=False,
             **(params_dict.get("select_event_details") or {}),
         )
@@ -907,6 +913,11 @@ def main(params: Params):
                 "event_details__Number_of_observers": "num_observers",
                 "event_details__Number_of_Observers": "num_observers",
                 "event_details__Number of Observers": "num_observers",
+                "event_details__Species": "species",
+                "event_details__Total Count": "totalcount",
+                "event_details__Number of Juveniles": "num_juveniles",
+                "event_details__Radial Angle": "radialangle",
+                "event_details__Distance to Centre (m)": "dist_to_centre",
             },
             **(params_dict.get("map_patrol_df") or {}),
         )
@@ -1033,6 +1044,26 @@ def main(params: Params):
         .mapvalues(argnames=["df"], argvalues=ffill_patrol_events)
     )
 
+    extract_notes = (
+        extract_notes_text.validate()
+        .set_task_instance_id("extract_notes")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            column="notes",
+            new_column="other_species",
+            **(params_dict.get("extract_notes") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=filter_wildlife_rep)
+    )
+
     zip_conn_surv_name_df = (
         zip_groupbykey.validate()
         .set_task_instance_id("zip_conn_surv_name_df")
@@ -1046,7 +1077,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[filter_wildlife_rep, retrieve_survey_name],
+            sequences=[extract_notes, retrieve_survey_name],
             **(params_dict.get("zip_conn_surv_name_df") or {}),
         )
         .call()
@@ -1774,6 +1805,29 @@ def main(params: Params):
         .mapvalues(argnames=["left", "right"], argvalues=zip_patrol_transects_df)
     )
 
+    persist_transect_pats = (
+        persist_df_wrapper.validate()
+        .set_task_instance_id("persist_transect_pats")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
+            filetypes=["csv"],
+            filename=None,
+            sanitize=False,
+            filename_prefix="transect_patrols",
+            **(params_dict.get("persist_transect_pats") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=merge_filtered_patrols)
+    )
+
     select_patrol_event_cols = (
         select_columns.validate()
         .set_task_instance_id("select_patrol_event_cols")
@@ -1800,6 +1854,7 @@ def main(params: Params):
                 "dist_to_centre",
                 "geometry",
                 "species",
+                "other_species",
                 "time",
                 "serial_number",
                 "radialangle",
@@ -1961,6 +2016,26 @@ def main(params: Params):
         .mapvalues(argnames=["filename_prefix", "df"], argvalues=zip_filename_gpkg_df)
     )
 
+    format_transect_names = (
+        format_text_column.validate()
+        .set_task_instance_id("format_transect_names")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            column="name",
+            method="lower",
+            **(params_dict.get("format_transect_names") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=filter_transect_columns)
+    )
+
     combine_transect_gpkg_name = (
         combine_names.validate()
         .set_task_instance_id("combine_transect_gpkg_name")
@@ -1992,7 +2067,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[combine_transect_gpkg_name, filter_transect_columns],
+            sequences=[combine_transect_gpkg_name, format_transect_names],
             **(params_dict.get("zip_filename_transect_df") or {}),
         )
         .call()
