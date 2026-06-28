@@ -2746,41 +2746,6 @@ merge_filtered_patrols = (
 
 
 # %% [markdown]
-# ## Persist transect patrols
-
-# %%
-# parameters
-
-persist_transect_pats_params = dict()
-
-# %%
-# call the task
-
-
-persist_transect_pats = (
-    persist_df_wrapper.set_task_instance_id("persist_transect_pats")
-    .handle_errors()
-    .with_tracing()
-    .skipif(
-        conditions=[
-            any_is_empty_df,
-            any_dependency_skipped,
-        ],
-        unpack_depth=1,
-    )
-    .partial(
-        root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-        filetypes=["csv"],
-        filename=None,
-        sanitize=False,
-        filename_prefix="transect_patrols",
-        **persist_transect_pats_params,
-    )
-    .mapvalues(argnames=["df"], argvalues=merge_filtered_patrols)
-)
-
-
-# %% [markdown]
 # ## Select patrol event columns for export
 
 # %%

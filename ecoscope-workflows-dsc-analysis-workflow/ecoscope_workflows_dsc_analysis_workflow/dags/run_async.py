@@ -237,7 +237,6 @@ def main(params: Params):
         "exclude_geom": ["filter_transect_columns"],
         "zip_patrol_transects_df": ["filter_intersecting_events", "exclude_geom"],
         "merge_filtered_patrols": ["zip_patrol_transects_df"],
-        "persist_transect_pats": ["merge_filtered_patrols"],
         "select_patrol_event_cols": ["merge_filtered_patrols"],
         "combine_patrol_event_names": ["retrieve_survey_name"],
         "zip_filename_patrol_df": [
@@ -2236,35 +2235,6 @@ def main(params: Params):
             kwargs={
                 "argnames": ["left", "right"],
                 "argvalues": DependsOn("zip_patrol_transects_df"),
-            },
-        ),
-        "persist_transect_pats": Node(
-            async_task=persist_df_wrapper.validate()
-            .set_task_instance_id("persist_transect_pats")
-            .handle_errors()
-            .with_tracing()
-            .skipif(
-                conditions=[
-                    any_is_empty_df,
-                    any_dependency_skipped,
-                ],
-                unpack_depth=1,
-            )
-            .set_executor("lithops"),
-            partial={
-                "root_path": os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-                "filetypes": [
-                    "csv",
-                ],
-                "filename": None,
-                "sanitize": False,
-                "filename_prefix": "transect_patrols",
-            }
-            | (params_dict.get("persist_transect_pats") or {}),
-            method="mapvalues",
-            kwargs={
-                "argnames": ["df"],
-                "argvalues": DependsOn("merge_filtered_patrols"),
             },
         ),
         "select_patrol_event_cols": Node(

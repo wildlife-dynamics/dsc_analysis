@@ -1785,29 +1785,6 @@ def main(params: Params):
         .mapvalues(argnames=["left", "right"], argvalues=zip_patrol_transects_df)
     )
 
-    persist_transect_pats = (
-        persist_df_wrapper.validate()
-        .set_task_instance_id("persist_transect_pats")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-            filetypes=["csv"],
-            filename=None,
-            sanitize=False,
-            filename_prefix="transect_patrols",
-            **(params_dict.get("persist_transect_pats") or {}),
-        )
-        .mapvalues(argnames=["df"], argvalues=merge_filtered_patrols)
-    )
-
     select_patrol_event_cols = (
         select_columns.validate()
         .set_task_instance_id("select_patrol_event_cols")

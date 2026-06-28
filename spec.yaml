@@ -934,20 +934,20 @@ workflow:
         - right 
       argvalues: ${{ workflow.zip_patrol_transects_df.return }}
       
-    # this needs to be removed later on
-  - name: Persist transect patrols
-    id: persist_transect_pats
-    task: persist_df_wrapper 
-    partial:
-      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
-      filetypes: 
-        - csv 
-      filename: null
-      sanitize: false 
-      filename_prefix: transect_patrols
-    mapvalues:
-      argnames: df 
-      argvalues: ${{ workflow.merge_filtered_patrols.return }}
+  #   # this needs to be removed later on
+  # - name: Persist transect patrols
+  #   id: persist_transect_pats
+  #   task: persist_df_wrapper 
+  #   partial:
+  #     root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+  #     filetypes: 
+  #       - csv 
+  #     filename: null
+  #     sanitize: false 
+  #     filename_prefix: transect_patrols
+  #   mapvalues:
+  #     argnames: df 
+  #     argvalues: ${{ workflow.merge_filtered_patrols.return }}
 
   - name: Select patrol event columns for export 
     id: select_patrol_event_cols 
