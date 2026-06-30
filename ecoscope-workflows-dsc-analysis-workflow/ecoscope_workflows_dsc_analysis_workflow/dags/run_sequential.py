@@ -121,6 +121,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     merge_transect_lines as merge_transect_lines,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    normalize_name_spaces as normalize_name_spaces,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     parse_df_point as parse_df_point,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -1130,6 +1133,44 @@ def main(params: Params):
         .mapvalues(argnames=["target_crs", "gdf"], argvalues=zip_transect_df_crs)
     )
 
+    normalize_transect_names_utm = (
+        format_text_column.validate()
+        .set_task_instance_id("normalize_transect_names_utm")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            column="name",
+            method="lower",
+            **(params_dict.get("normalize_transect_names_utm") or {}),
+        )
+        .mapvalues(argnames=["df"], argvalues=reproject_transects_utm)
+    )
+
+    normalize_transect_underscores = (
+        normalize_name_spaces.validate()
+        .set_task_instance_id("normalize_transect_underscores")
+        .handle_errors()
+        .with_tracing()
+        .skipif(
+            conditions=[
+                any_is_empty_df,
+                any_dependency_skipped,
+            ],
+            unpack_depth=1,
+        )
+        .partial(
+            column="name", **(params_dict.get("normalize_transect_underscores") or {})
+        )
+        .mapvalues(argnames=["df"], argvalues=normalize_transect_names_utm)
+    )
+
     zip_patrol_df_crs = (
         zip_groupbykey.validate()
         .set_task_instance_id("zip_patrol_df_crs")
@@ -1178,7 +1219,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[patrol_events_utm, reproject_transects_utm],
+            sequences=[patrol_events_utm, normalize_transect_underscores],
             **(params_dict.get("zip_patrol_transects") or {}),
         )
         .call()
@@ -1280,7 +1321,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(
-            sequences=[estimate_animal_position, reproject_transects_utm],
+            sequences=[estimate_animal_position, normalize_transect_underscores],
             **(params_dict.get("zip_est_patrol_transects") or {}),
         )
         .call()
@@ -1345,7 +1386,7 @@ def main(params: Params):
             unpack_depth=1,
         )
         .partial(**(params_dict.get("merge_transects") or {}))
-        .mapvalues(argnames=["transects"], argvalues=reproject_transects_utm)
+        .mapvalues(argnames=["transects"], argvalues=normalize_transect_underscores)
     )
 
     simplify_tolerance = (
@@ -2051,68 +2092,6 @@ def main(params: Params):
         )
         .mapvalues(
             argnames=["filename_prefix", "df"], argvalues=zip_filename_transect_df
-        )
-    )
-
-    combine_orig_transect_gpkg_name = (
-        combine_names.validate()
-        .set_task_instance_id("combine_orig_transect_gpkg_name")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            b="_orig_transects",
-            **(params_dict.get("combine_orig_transect_gpkg_name") or {}),
-        )
-        .mapvalues(argnames=["a"], argvalues=retrieve_survey_name)
-    )
-
-    zip_filename_orig_transect_df = (
-        zip_groupbykey.validate()
-        .set_task_instance_id("zip_filename_orig_transect_df")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            sequences=[combine_orig_transect_gpkg_name, reproject_transects],
-            **(params_dict.get("zip_filename_orig_transect_df") or {}),
-        )
-        .call()
-    )
-
-    persist_orig_transects_gpkg = (
-        persist_df_wrapper.validate()
-        .set_task_instance_id("persist_orig_transects_gpkg")
-        .handle_errors()
-        .with_tracing()
-        .skipif(
-            conditions=[
-                any_is_empty_df,
-                any_dependency_skipped,
-            ],
-            unpack_depth=1,
-        )
-        .partial(
-            root_path=os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-            filetypes=["gpkg"],
-            filename=None,
-            sanitize=False,
-            **(params_dict.get("persist_orig_transects_gpkg") or {}),
-        )
-        .mapvalues(
-            argnames=["filename_prefix", "df"], argvalues=zip_filename_orig_transect_df
         )
     )
 

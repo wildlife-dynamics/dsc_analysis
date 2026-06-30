@@ -289,12 +289,44 @@
       ]
     },
     "time_range": {
+      "timezone": {
+        "ui:widget": "hidden",
+        "label": { "ui:widget": "hidden" },
+        "tzCode": { "ui:widget": "hidden" },
+        "name": { "ui:widget": "hidden" },
+        "utc": { "ui:widget": "hidden" }
+      },
+      "time_format": {
+        "ui:widget": "hidden"
+      },
       "ui:order": [
         "since",
         "until",
         "timezone",
         "time_format"
       ]
+    },
+    "connection_config": {
+      "entries": {
+        "items": {
+          "surveys": {
+            "items": {
+              "time_range": {
+                "timezone": {
+                  "ui:widget": "hidden",
+                  "label": { "ui:widget": "hidden" },
+                  "tzCode": { "ui:widget": "hidden" },
+                  "name": { "ui:widget": "hidden" },
+                  "utc": { "ui:widget": "hidden" }
+                },
+                "time_format": {
+                  "ui:widget": "hidden"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "ui:order": [
       "workflow_details",

@@ -33,7 +33,7 @@ requirements:
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
   - name: ecoscope-workflows-ext-distance-sample-counts
-    version: "0.0.9.*"
+    version: "0.0.10.*"
     channel: https://repo.prefix.dev/ecoscope-workflows-custom/
 
 rjsf-overrides:
@@ -53,11 +53,6 @@ rjsf-overrides:
     SurveyConfig.title: "Configure Survey"
   properties:
     connection_config.properties.entries.title: "ER"
-  # uiSchema:
-  #   connection_config.entries.items.surveys.items.time_range.timezone:
-  #     ui:widget: hidden
-  #   connection_config.entries.items.surveys.items.time_range.time_format:
-  #     ui:widget: hidden
 
 task-instance-defaults:
   skipif:
@@ -576,16 +571,35 @@ workflow:
         - ${{ workflow.fetch_patrol_transects.return }} 
         #${{ workflow.format_transect_names.return }}
 
-  - name: Reproject transects to utm crs  
+  - name: Reproject transects to utm crs
     id: reproject_transects_utm
     task: reproject_gdf
-    mapvalues: 
-      argnames: 
-        - target_crs 
-        - gdf 
+    mapvalues:
+      argnames:
+        - target_crs
+        - gdf
       argvalues: ${{ workflow.zip_transect_df_crs.return }}
 
-  - name: Zip patrol df and crs 
+  - name: Normalize transect names to lowercase for consistent ID matching
+    id: normalize_transect_names_utm
+    task: format_text_column
+    partial:
+      column: name
+      method: lower
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.reproject_transects_utm.return }}
+
+  - name: Replace spaces with underscores in transect names to match event transect_id values
+    id: normalize_transect_underscores
+    task: normalize_name_spaces
+    partial:
+      column: name
+    mapvalues:
+      argnames: df
+      argvalues: ${{ workflow.normalize_transect_names_utm.return }}
+
+  - name: Zip patrol df and crs
     id: zip_patrol_df_crs 
     task: zip_groupbykey 
     partial: 
@@ -602,13 +616,13 @@ workflow:
         - gdf 
       argvalues: ${{ workflow.zip_patrol_df_crs.return }}
     
-  - name: Zip patrol events and transects 
-    id: zip_patrol_transects  
-    task: zip_groupbykey 
-    partial: 
-      sequences: 
+  - name: Zip patrol events and transects
+    id: zip_patrol_transects
+    task: zip_groupbykey
+    partial:
+      sequences:
         - ${{ workflow.patrol_events_utm.return }}
-        - ${{ workflow.reproject_transects_utm.return }}
+        - ${{ workflow.normalize_transect_underscores.return }}
 
   - name: Calculate distance from observers position to transect centerline 
     id: observers_distance 
@@ -654,13 +668,13 @@ workflow:
       argnames: patrol_events 
       argvalues: ${{ workflow.add_orig_geom.return }}
 
-  - name: Zip estimated patrol events and transects 
-    id: zip_est_patrol_transects  
-    task: zip_groupbykey 
-    partial: 
-      sequences: 
+  - name: Zip estimated patrol events and transects
+    id: zip_est_patrol_transects
+    task: zip_groupbykey
+    partial:
+      sequences:
         - ${{ workflow.estimate_animal_position.return }}
-        - ${{ workflow.reproject_transects_utm.return }}
+        - ${{ workflow.normalize_transect_underscores.return }}
 
   - name: Calculate orthogonal distance
     id: compute_ortho_dist
@@ -694,8 +708,8 @@ workflow:
     task: merge_transect_lines
     mapvalues:
       argnames: transects
-      argvalues: ${{ workflow.reproject_transects_utm.return }}
-  
+      argvalues: ${{ workflow.normalize_transect_underscores.return }}
+
   - name: Simplify transects by a tolerance of 50 meters
     id: simplify_tolerance 
     task: simplify_transects 
@@ -1087,37 +1101,37 @@ workflow:
         - df
       argvalues: ${{ workflow.zip_filename_transect_df.return }}
   
-  - name: Combine survey name with original transects for gpkg filename
-    id: combine_orig_transect_gpkg_name
-    task: combine_names 
-    partial: 
-      b: _orig_transects
-    mapvalues: 
-      argnames: a
-      argvalues: ${{ workflow.retrieve_survey_name.return }}
+  # - name: Combine survey name with original transects for gpkg filename
+  #   id: combine_orig_transect_gpkg_name
+  #   task: combine_names 
+  #   partial: 
+  #     b: _orig_transects
+  #   mapvalues: 
+  #     argnames: a
+  #     argvalues: ${{ workflow.retrieve_survey_name.return }}
 
-  - name: Zip filename with original transects df for gpkg export
-    id: zip_filename_orig_transect_df
-    task: zip_groupbykey
-    partial:
-      sequences:
-        - ${{ workflow.combine_orig_transect_gpkg_name.return }}
-        - ${{ workflow.reproject_transects.return }} 
+  # - name: Zip filename with original transects df for gpkg export
+  #   id: zip_filename_orig_transect_df
+  #   task: zip_groupbykey
+  #   partial:
+  #     sequences:
+  #       - ${{ workflow.combine_orig_transect_gpkg_name.return }}
+  #       - ${{ workflow.reproject_transects.return }} 
 
-  - name: Persist original transects as gpkg 
-    id: persist_orig_transects_gpkg 
-    task: persist_df_wrapper 
-    partial: 
-      root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
-      filetypes: 
-        - gpkg 
-      filename: null 
-      sanitize: false 
-    mapvalues: 
-      argnames: 
-        - filename_prefix
-        - df
-      argvalues: ${{ workflow.zip_filename_orig_transect_df.return }}
+  # - name: Persist original transects as gpkg 
+  #   id: persist_orig_transects_gpkg 
+  #   task: persist_df_wrapper 
+  #   partial: 
+  #     root_path: ${{ env.ECOSCOPE_WORKFLOWS_RESULTS }}
+  #     filetypes: 
+  #       - gpkg 
+  #     filename: null 
+  #     sanitize: false 
+  #   mapvalues: 
+  #     argnames: 
+  #       - filename_prefix
+  #       - df
+  #     argvalues: ${{ workflow.zip_filename_orig_transect_df.return }}
 
   - name: Overall dashboard
     id: overall_dashboard

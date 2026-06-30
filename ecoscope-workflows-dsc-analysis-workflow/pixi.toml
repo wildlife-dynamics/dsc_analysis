@@ -52,7 +52,7 @@ version = "0.0.3.*"
 channel = "https://repo.prefix.dev/ecoscope-workflows-custom/"
 
 [dependencies.ecoscope-workflows-ext-distance-sample-counts]
-version = "0.0.9.*"
+version = "0.0.10.*"
 channel = "https://repo.prefix.dev/ecoscope-workflows-custom/"
 
 [feature.runner.dependencies.ecoscope-workflows-runner]

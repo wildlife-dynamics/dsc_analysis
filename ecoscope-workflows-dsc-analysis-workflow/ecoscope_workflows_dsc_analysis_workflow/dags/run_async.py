@@ -122,6 +122,9 @@ from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     merge_transect_lines as merge_transect_lines,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
+    normalize_name_spaces as normalize_name_spaces,
+)
+from ecoscope_workflows_ext_distance_sample_counts.tasks import (
     parse_df_point as parse_df_point,
 )
 from ecoscope_workflows_ext_distance_sample_counts.tasks import (
@@ -198,20 +201,22 @@ def main(params: Params):
         "convert_transects_utm": ["fetch_patrol_transects"],
         "zip_transect_df_crs": ["convert_transects_utm", "fetch_patrol_transects"],
         "reproject_transects_utm": ["zip_transect_df_crs"],
+        "normalize_transect_names_utm": ["reproject_transects_utm"],
+        "normalize_transect_underscores": ["normalize_transect_names_utm"],
         "zip_patrol_df_crs": ["convert_transects_utm", "add_survey_column"],
         "patrol_events_utm": ["zip_patrol_df_crs"],
-        "zip_patrol_transects": ["patrol_events_utm", "reproject_transects_utm"],
+        "zip_patrol_transects": ["patrol_events_utm", "normalize_transect_underscores"],
         "observers_distance": ["zip_patrol_transects"],
         "exclude_neg_off_transects": ["observers_distance"],
         "add_orig_geom": ["exclude_neg_off_transects"],
         "estimate_animal_position": ["add_orig_geom"],
         "zip_est_patrol_transects": [
             "estimate_animal_position",
-            "reproject_transects_utm",
+            "normalize_transect_underscores",
         ],
         "compute_ortho_dist": ["zip_est_patrol_transects"],
         "exclude_neg_ortho_dist": ["compute_ortho_dist"],
-        "merge_transects": ["reproject_transects_utm"],
+        "merge_transects": ["normalize_transect_underscores"],
         "simplify_tolerance": ["merge_transects"],
         "buffer_transect_segments": ["simplify_tolerance"],
         "zip_events_buff_trans": ["exclude_neg_ortho_dist", "buffer_transect_segments"],
@@ -255,12 +260,6 @@ def main(params: Params):
             "format_transect_names",
         ],
         "persist_transects_gpkg": ["zip_filename_transect_df"],
-        "combine_orig_transect_gpkg_name": ["retrieve_survey_name"],
-        "zip_filename_orig_transect_df": [
-            "combine_orig_transect_gpkg_name",
-            "reproject_transects",
-        ],
-        "persist_orig_transects_gpkg": ["zip_filename_orig_transect_df"],
         "overall_dashboard": ["workflow_details", "time_range", "groupers"],
     }
 
@@ -1450,6 +1449,53 @@ def main(params: Params):
                 "argvalues": DependsOn("zip_transect_df_crs"),
             },
         ),
+        "normalize_transect_names_utm": Node(
+            async_task=format_text_column.validate()
+            .set_task_instance_id("normalize_transect_names_utm")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "name",
+                "method": "lower",
+            }
+            | (params_dict.get("normalize_transect_names_utm") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("reproject_transects_utm"),
+            },
+        ),
+        "normalize_transect_underscores": Node(
+            async_task=normalize_name_spaces.validate()
+            .set_task_instance_id("normalize_transect_underscores")
+            .handle_errors()
+            .with_tracing()
+            .skipif(
+                conditions=[
+                    any_is_empty_df,
+                    any_dependency_skipped,
+                ],
+                unpack_depth=1,
+            )
+            .set_executor("lithops"),
+            partial={
+                "column": "name",
+            }
+            | (params_dict.get("normalize_transect_underscores") or {}),
+            method="mapvalues",
+            kwargs={
+                "argnames": ["df"],
+                "argvalues": DependsOn("normalize_transect_names_utm"),
+            },
+        ),
         "zip_patrol_df_crs": Node(
             async_task=zip_groupbykey.validate()
             .set_task_instance_id("zip_patrol_df_crs")
@@ -1508,7 +1554,7 @@ def main(params: Params):
             partial={
                 "sequences": [
                     DependsOn("patrol_events_utm"),
-                    DependsOn("reproject_transects_utm"),
+                    DependsOn("normalize_transect_underscores"),
                 ],
             }
             | (params_dict.get("zip_patrol_transects") or {}),
@@ -1627,7 +1673,7 @@ def main(params: Params):
             partial={
                 "sequences": [
                     DependsOn("estimate_animal_position"),
-                    DependsOn("reproject_transects_utm"),
+                    DependsOn("normalize_transect_underscores"),
                 ],
             }
             | (params_dict.get("zip_est_patrol_transects") or {}),
@@ -1702,7 +1748,7 @@ def main(params: Params):
             method="mapvalues",
             kwargs={
                 "argnames": ["transects"],
-                "argvalues": DependsOn("reproject_transects_utm"),
+                "argvalues": DependsOn("normalize_transect_underscores"),
             },
         ),
         "simplify_tolerance": Node(
@@ -2558,79 +2604,6 @@ def main(params: Params):
             kwargs={
                 "argnames": ["filename_prefix", "df"],
                 "argvalues": DependsOn("zip_filename_transect_df"),
-            },
-        ),
-        "combine_orig_transect_gpkg_name": Node(
-            async_task=combine_names.validate()
-            .set_task_instance_id("combine_orig_transect_gpkg_name")
-            .handle_errors()
-            .with_tracing()
-            .skipif(
-                conditions=[
-                    any_is_empty_df,
-                    any_dependency_skipped,
-                ],
-                unpack_depth=1,
-            )
-            .set_executor("lithops"),
-            partial={
-                "b": "_orig_transects",
-            }
-            | (params_dict.get("combine_orig_transect_gpkg_name") or {}),
-            method="mapvalues",
-            kwargs={
-                "argnames": ["a"],
-                "argvalues": DependsOn("retrieve_survey_name"),
-            },
-        ),
-        "zip_filename_orig_transect_df": Node(
-            async_task=zip_groupbykey.validate()
-            .set_task_instance_id("zip_filename_orig_transect_df")
-            .handle_errors()
-            .with_tracing()
-            .skipif(
-                conditions=[
-                    any_is_empty_df,
-                    any_dependency_skipped,
-                ],
-                unpack_depth=1,
-            )
-            .set_executor("lithops"),
-            partial={
-                "sequences": [
-                    DependsOn("combine_orig_transect_gpkg_name"),
-                    DependsOn("reproject_transects"),
-                ],
-            }
-            | (params_dict.get("zip_filename_orig_transect_df") or {}),
-            method="call",
-        ),
-        "persist_orig_transects_gpkg": Node(
-            async_task=persist_df_wrapper.validate()
-            .set_task_instance_id("persist_orig_transects_gpkg")
-            .handle_errors()
-            .with_tracing()
-            .skipif(
-                conditions=[
-                    any_is_empty_df,
-                    any_dependency_skipped,
-                ],
-                unpack_depth=1,
-            )
-            .set_executor("lithops"),
-            partial={
-                "root_path": os.environ["ECOSCOPE_WORKFLOWS_RESULTS"],
-                "filetypes": [
-                    "gpkg",
-                ],
-                "filename": None,
-                "sanitize": False,
-            }
-            | (params_dict.get("persist_orig_transects_gpkg") or {}),
-            method="mapvalues",
-            kwargs={
-                "argnames": ["filename_prefix", "df"],
-                "argvalues": DependsOn("zip_filename_orig_transect_df"),
             },
         ),
         "overall_dashboard": Node(
